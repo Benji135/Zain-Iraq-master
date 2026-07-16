@@ -188,7 +188,7 @@ export default function AdminDeskWorkspace({
   const [auditFilterLabel, setAuditFilterLabel] = useState("");
   const [auditFilterDateFrom, setAuditFilterDateFrom] = useState("");
   const [auditFilterDateTo, setAuditFilterDateTo] = useState("");
-  const [activeTab, setActiveTab] = useState<"dashboard" | "articles" | "gaps" | "audit" | "workflows" | "analytics" | "glossary">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "articles" | "gaps" | "audit" | "workflows" | "analytics" | "glossary" | "alerts">("dashboard");
   const [glossarySearch, setGlossarySearch] = useState("");
   const [glossaryCategory, setGlossaryCategory] = useState("All");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -348,27 +348,60 @@ export default function AdminDeskWorkspace({
     t === "warning" ? "ticker" : t === "success" ? "broadcast" : "banner";
 
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
+  const [allAnnouncements, setAllAnnouncements] = useState<any[]>([]);
   const [showNotifForm, setShowNotifForm] = useState(false);
   const [newNotifTitle, setNewNotifTitle] = useState("");
   const [newNotifMessage, setNewNotifMessage] = useState("");
   const [newNotifType, setNewNotifType] = useState<"info" | "warning" | "success">("info");
+  const [newNotifAudience, setNewNotifAudience] = useState<"all" | "agents" | "admins">("all");
+  const [newNotifTeamId, setNewNotifTeamId] = useState<string>("");
+  const [newNotifStartsAt, setNewNotifStartsAt] = useState<string>("");
+  const [newNotifEndsAt, setNewNotifEndsAt] = useState<string>("");
+
+  const fetchTargetedAnnouncements = async () => {
+    try {
+      const res = await fetch("/api/v1/announcements");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.map((a: any) => ({ id: a.id, title: a.title, message: a.body, uiType: annTypeToUi(a.type) })));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchManageAnnouncements = async () => {
+    try {
+      const res = await fetch("/api/v1/announcements?manage=true");
+      if (res.ok) {
+        const data = await res.json();
+        setAllAnnouncements(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
-    fetch("/api/v1/announcements")
-      .then(r => r.ok ? r.json() : [])
-      .then((data: any[]) =>
-        setNotifications(data.map(a => ({ id: a.id, title: a.title, message: a.body, uiType: annTypeToUi(a.type) })))
-      )
-      .catch(() => { });
+    fetchTargetedAnnouncements();
   }, []);
+
+  useEffect(() => {
+    if (currentTab === "alerts") {
+      fetchManageAnnouncements();
+    }
+  }, [currentTab]);
 
   const dismissNotification = async (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
+    setAllAnnouncements(prev => prev.map(a => a.id === id ? { ...a, active: false } : a));
     await fetch("/api/v1/announcements", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     }).catch(() => { });
+    fetchTargetedAnnouncements();
+    fetchManageAnnouncements();
   };
 
   const addNotification = async () => {
@@ -377,17 +410,29 @@ export default function AdminDeskWorkspace({
     const res = await fetch("/api/v1/announcements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, message: newNotifMessage.trim(), type: uiTypeToAnn(newNotifType) }),
+      body: JSON.stringify({
+        title,
+        message: newNotifMessage.trim(),
+        type: uiTypeToAnn(newNotifType),
+        audience: newNotifAudience,
+        team_id: newNotifTeamId || null,
+        starts_at: newNotifStartsAt || null,
+        ends_at: newNotifEndsAt || null,
+      }),
     }).catch(() => null);
     if (res?.ok) {
-      const data = await res.json();
-      setNotifications(prev => [...prev, { id: data.id, title: data.title, message: data.body, uiType: annTypeToUi(data.type) }]);
+      fetchTargetedAnnouncements();
+      fetchManageAnnouncements();
     } else {
       // Optimistic fallback (offline / permissions)
       setNotifications(prev => [...prev, { id: Date.now().toString(), title, message: newNotifMessage.trim(), uiType: newNotifType }]);
     }
     setNewNotifTitle("");
     setNewNotifMessage("");
+    setNewNotifAudience("all");
+    setNewNotifTeamId("");
+    setNewNotifStartsAt("");
+    setNewNotifEndsAt("");
     setShowNotifForm(false);
   };
 
@@ -1553,6 +1598,24 @@ export default function AdminDeskWorkspace({
                   <button
                     type="button"
                     onClick={() => {
+                      setActiveTab("alerts");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "alerts" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "alerts" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "alerts" ? "text-amber-400/80" : ""}`}>
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    Alerts & Broadcasts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setActiveTab("audit");
                       closeEditor();
                       setMobileSidebarOpen(false);
@@ -1641,7 +1704,7 @@ export default function AdminDeskWorkspace({
                 </svg>
               </button>
               <h2 className="text-sm font-extrabold text-zinc-955 uppercase tracking-wide">
-                {currentTab === "dashboard" ? "Analytics Dashboard" : currentTab === "articles" ? "Articles Manager" : currentTab === "gaps" ? "Gaps Queue" : currentTab === "workflows" ? "Workflows" : currentTab === "audit" ? "Audit Logs" : currentTab === "glossary" ? "Glossary" : "Analytics"}
+                {currentTab === "dashboard" ? "Analytics Dashboard" : currentTab === "articles" ? "Articles Manager" : currentTab === "gaps" ? "Gaps Queue" : currentTab === "workflows" ? "Workflows" : currentTab === "audit" ? "Audit Logs" : currentTab === "glossary" ? "Glossary" : currentTab === "alerts" ? "Alerts & Broadcasts" : "Analytics"}
               </h2>
             </div>
             <div className="flex items-center gap-3">
@@ -3587,6 +3650,264 @@ export default function AdminDeskWorkspace({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ALERTS & NOTIFICATIONS MANAGEMENT VIEW */}
+          {currentTab === "alerts" && (
+            <div className="space-y-6">
+              {/* Header card with statistics and + New Alert button */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-xl border border-zinc-200 shadow-2xs">
+                <div className="text-left">
+                  <h2 className="text-lg font-extrabold text-zinc-955">Active Tenant Alerts</h2>
+                  <p className="text-xs font-semibold text-zinc-500 mt-1">
+                    Manage system broadcasts, tickers, and target audience delivery.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifForm(true)}
+                  className="rounded-lg bg-zinc-950 hover:bg-zinc-800 px-4 py-2.5 text-xs font-bold text-white shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <span className="text-sm font-light">+</span> New Notification
+                </button>
+              </div>
+
+              {/* Create alert modal/form */}
+              {showNotifForm && (
+                <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm space-y-4">
+                  <div className="border-b border-zinc-150 pb-3 flex justify-between items-center">
+                    <h3 className="text-sm font-bold text-zinc-900">Create New Announcement</h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowNotifForm(false)}
+                      className="text-xs font-bold text-zinc-400 hover:text-zinc-650"
+                    >
+                      × Close
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Title */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Title</label>
+                      <input
+                        type="text"
+                        placeholder="Optional Title (e.g. System Maintenance)"
+                        value={newNotifTitle}
+                        onChange={(e) => setNewNotifTitle(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      />
+                    </div>
+
+                    {/* Alert Type */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Level / Type</label>
+                      <select
+                        value={newNotifType}
+                        onChange={(e) => setNewNotifType(e.target.value as any)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      >
+                        <option value="info">Info Banner (Blue)</option>
+                        <option value="warning">Warning Ticker (Amber)</option>
+                        <option value="success">Success Broadcast (Green)</option>
+                      </select>
+                    </div>
+
+                    {/* Target Group */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Audience Group</label>
+                      <select
+                        value={newNotifAudience}
+                        onChange={(e) => setNewNotifAudience(e.target.value as any)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      >
+                        <option value="all">All Groups</option>
+                        <option value="agents">Support Agents only</option>
+                        <option value="admins">Admins only</option>
+                      </select>
+                    </div>
+
+                    {/* Target Team */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Specific Team (Optional)</label>
+                      <select
+                        value={newNotifTeamId}
+                        onChange={(e) => setNewNotifTeamId(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      >
+                        <option value="">No Team Target (Global to Group)</option>
+                        {teams.map((t: any) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Starts At */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Starts At (Optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={newNotifStartsAt}
+                        onChange={(e) => setNewNotifStartsAt(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      />
+                    </div>
+
+                    {/* Ends At */}
+                    <div className="space-y-1 text-left">
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ends At (Optional)</label>
+                      <input
+                        type="datetime-local"
+                        value={newNotifEndsAt}
+                        onChange={(e) => setNewNotifEndsAt(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Body/Message */}
+                  <div className="space-y-1 text-left">
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Message</label>
+                    <textarea
+                      placeholder="Type the notification details here..."
+                      value={newNotifMessage}
+                      onChange={(e) => setNewNotifMessage(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowNotifForm(false)}
+                      className="rounded-lg border border-zinc-200 hover:bg-zinc-50 px-4 py-2 text-xs font-bold text-zinc-650 transition-colors shadow-2xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addNotification}
+                      className="rounded-lg bg-zinc-950 hover:bg-zinc-800 px-4 py-2 text-xs font-bold text-white transition-colors shadow-xs"
+                    >
+                      Publish Alert
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Alerts List Table */}
+              <div className="bg-white rounded-xl border border-zinc-200 shadow-2xs overflow-hidden text-left">
+                <div className="p-4 border-b border-zinc-150">
+                  <h3 className="text-xs font-extrabold text-zinc-950 uppercase tracking-wider">Alert History & Status</h3>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-[11px]">
+                    <thead>
+                      <tr className="border-b border-zinc-200 bg-zinc-50/75 text-zinc-450 uppercase font-bold tracking-wider">
+                        <th className="px-5 py-3 text-left font-bold">Alert Message</th>
+                        <th className="px-5 py-3 text-left font-bold">Target Audience</th>
+                        <th className="px-5 py-3 text-left font-bold">Target Team</th>
+                        <th className="px-5 py-3 text-left font-bold">Schedule</th>
+                        <th className="px-5 py-3 text-left font-bold">Status</th>
+                        <th className="px-5 py-3 text-right font-bold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 font-semibold text-zinc-700">
+                      {allAnnouncements.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-5 py-8 text-center text-zinc-400">
+                            No notifications published yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        allAnnouncements.map((a: any) => {
+                          const now = new Date();
+                          const start = a.starts_at ? new Date(a.starts_at) : null;
+                          const end = a.ends_at ? new Date(a.ends_at) : null;
+
+                          let status = "Active";
+                          let statusColor = "bg-green-50 text-green-700 border-green-200";
+
+                          if (!a.active) {
+                            status = "Deactivated";
+                            statusColor = "bg-zinc-50 text-zinc-500 border-zinc-200";
+                          } else if (start && start > now) {
+                            status = "Scheduled";
+                            statusColor = "bg-amber-50 text-amber-700 border-amber-200";
+                          } else if (end && end < now) {
+                            status = "Expired";
+                            statusColor = "bg-red-50 text-red-700 border-red-200";
+                          }
+
+                          return (
+                            <tr key={a.id} className="hover:bg-zinc-50/50 transition-colors">
+                              <td className="px-5 py-4 max-w-sm">
+                                <div className="flex items-start gap-2">
+                                  <span className="mt-0.5 select-none text-xs">
+                                    {a.type === "ticker" ? "⚠️" : a.type === "broadcast" ? "✅" : "ℹ️"}
+                                  </span>
+                                  <div>
+                                    {a.title && (
+                                      <p className="font-extrabold text-zinc-950 mb-0.5">{a.title}</p>
+                                    )}
+                                    <p className="font-medium text-zinc-500 leading-normal">{a.body}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className="inline-flex rounded-md px-2 py-0.5 border border-blue-100 bg-blue-50 text-blue-700 capitalize">
+                                  {a.audience === "all" ? "All Users" : a.audience === "agents" ? "Agents" : "Admins"}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
+                                {a.team_id ? (
+                                  <span className="inline-flex rounded-md px-2 py-0.5 border border-purple-100 bg-purple-50 text-purple-700">
+                                    {teams.find((t: any) => t.id === a.team_id)?.name || "Target Team"}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-400 font-normal">Global</span>
+                                )}
+                              </td>
+                              <td className="px-5 py-4 text-zinc-400 font-medium whitespace-nowrap">
+                                {start || end ? (
+                                  <div className="space-y-0.5">
+                                    {start && <div>Start: {start.toLocaleString()}</div>}
+                                    {end && <div>End: {end.toLocaleString()}</div>}
+                                  </div>
+                                ) : (
+                                  "Always active"
+                                )}
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${statusColor}`}>
+                                  {status}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 text-right">
+                                {a.active ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => dismissNotification(a.id)}
+                                    className="rounded-lg border border-red-200 hover:bg-red-50 px-2.5 py-1 text-[10px] font-extrabold text-red-650 hover:text-red-700 transition-colors shadow-2xs"
+                                  >
+                                    Deactivate
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-zinc-400 italic">Inactive</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
