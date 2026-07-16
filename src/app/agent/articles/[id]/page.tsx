@@ -68,6 +68,7 @@ export default async function AgentArticlePage({ params, searchParams }: PagePro
   const shortAnswer = stripMarkdown(displayVar?.short_answer ?? "");
   const rawSteps = displayVar?.detailed_steps ?? "";
   const copyMacro = stripMarkdown(displayVar?.copy_ready_macro ?? "") || shortAnswer;
+  const troubleshootingFlow = displayVar?.troubleshooting_flow ?? null;
 
   // Split into raw lines, skip blank lines and nav/link dumps
   const rawLines = rawSteps
@@ -117,6 +118,7 @@ export default async function AgentArticlePage({ params, searchParams }: PagePro
         shortAnswer,
         copyMacro,
         numberedSteps,
+        troubleshootingFlow,
         internalNote,
         deliveryChannels,
         helpfulPct,

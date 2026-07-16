@@ -6,6 +6,7 @@ import ArticleFeedbackForm from "@/components/ArticleFeedbackForm";
 import CopyMacroButton from "./CopyMacroButton";
 import { ArticleStatus, Channel } from "@prisma/client";
 import { parseMarkdownToHtml } from "@/lib/markdown";
+import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 
 type PageProps = {
   params: Promise<{
@@ -332,6 +333,13 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
             className="prose prose-zinc max-w-none text-zinc-800 text-sm leading-relaxed whitespace-pre-wrap font-medium"
             dangerouslySetInnerHTML={{ __html: parseMarkdownToHtml(contentBody) }}
           />
+
+          {displayVariant?.troubleshooting_flow != null && (
+            <div className="mt-8 border-t border-zinc-100 pt-6 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">Interactive Troubleshooting Guide</h4>
+              <TroubleshootingPlayer flow={displayVariant.troubleshooting_flow} />
+            </div>
+          )}
 
           {activeChannel === "agent" && macroText && (
             <div className="mt-8 border-t border-zinc-100 pt-6 space-y-3">

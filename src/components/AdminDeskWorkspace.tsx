@@ -265,6 +265,7 @@ export default function AdminDeskWorkspace({
   // Variant fields: short answers are used for summaries across channels
   const [vDefaultShort, setVDefaultShort] = useState(""); // Default variant summary description
   const [vDefaultDetailed, setVDefaultDetailed] = useState("");
+  const [vDefaultFlow, setVDefaultFlow] = useState("");
 
   const [vAgentShort, setVAgentShort] = useState(""); // Agent variant summary description
   const [vAgentDetailed, setVAgentDetailed] = useState("");
@@ -929,6 +930,7 @@ export default function AdminDeskWorkspace({
     setVDefaultShort(dV?.short_answer || "");
     setVDefaultDetailed(defaultVal);
     setInitialDefaultDetailed(defaultVal);
+    setVDefaultFlow(dV?.troubleshooting_flow ? JSON.stringify(dV.troubleshooting_flow, null, 2) : "");
 
     const aV = article.variants?.find((v) => v.channel === "agent");
     const agentVal = aV?.detailed_steps || "";
@@ -1002,6 +1004,7 @@ export default function AdminDeskWorkspace({
     setVDefaultShort("");
     setVDefaultDetailed("");
     setInitialDefaultDetailed("");
+    setVDefaultFlow("");
     setVAgentShort("");
     setVAgentDetailed("");
     setInitialAgentDetailed("");
@@ -1144,7 +1147,7 @@ export default function AdminDeskWorkspace({
 
     // Prepare variants payload
     const variantsPayload = [
-      { channel: "default", short_answer: vDefaultShort, detailed_steps: vDefaultDetailed },
+      { channel: "default", short_answer: vDefaultShort, detailed_steps: vDefaultDetailed, troubleshooting_flow: vDefaultFlow ? JSON.parse(vDefaultFlow) : null },
       { channel: "agent", short_answer: vAgentShort, detailed_steps: vAgentDetailed, copy_ready_macro: vAgentMacro, troubleshooting_flow: vAgentFlow ? JSON.parse(vAgentFlow) : null },
       { channel: "chatbot", short_answer: vChatbotShort, detailed_steps: vChatbotDetailed },
       { channel: "whatsapp", short_answer: vWhatsappShort, detailed_steps: vWhatsappDetailed },
@@ -3097,40 +3100,51 @@ export default function AdminDeskWorkspace({
                           </div>
                         </div>
                       </div>
-                      {variantTab === "agent" && (
-                        <div className="space-y-2 pt-4 border-t border-zinc-150 text-left">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Interactive Troubleshooting Flow JSON</label>
-                            <button
-                              type="button"
-                              onClick={() => setVAgentFlow(JSON.stringify(SAMPLE_TROUBLESHOOTING_FLOW, null, 2))}
-                              className="rounded border border-zinc-250 bg-white px-2 py-1 text-[9px] font-bold text-zinc-700 hover:text-zinc-955 shadow-2xs cursor-pointer"
-                            >
-                              Load Template Flow
-                            </button>
-                          </div>
-                          <textarea
-                            rows={6}
-                            value={vAgentFlow}
-                            onChange={(e) => setVAgentFlow(e.target.value)}
-                            className="w-full rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-850 focus:outline-hidden font-mono shadow-inner"
-                            placeholder='{ "start_node": "...", "nodes": { ... } }'
-                          />
-                          {vAgentFlow && (
-                            <div className="border border-zinc-200 rounded-lg p-4 bg-zinc-50 mt-2">
-                              <span className="text-[10px] text-zinc-450 font-bold uppercase block mb-3">Live Flow Tester Preview:</span>
-                              {(() => {
-                                try {
-                                  const parsed = JSON.parse(vAgentFlow);
-                                  return <TroubleshootingPlayer flow={parsed} />;
-                                } catch (err) {
-                                  return <span className="text-[10px] text-red-500 font-semibold font-mono">Invalid JSON syntax. Fix structure to preview flow player.</span>;
-                                }
-                              })()}
+                      {(variantTab === "agent" || variantTab === "default") && (() => {
+                        const flowValue = variantTab === "default" ? vDefaultFlow : vAgentFlow;
+                        const setFlowValue = variantTab === "default" ? setVDefaultFlow : setVAgentFlow;
+                        return (
+                          <div className="space-y-2 pt-4 border-t border-zinc-150 text-left">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                                Interactive Troubleshooting Flow JSON {variantTab === "default" ? "(Customer-Facing)" : "(Agent)"}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setFlowValue(JSON.stringify(SAMPLE_TROUBLESHOOTING_FLOW, null, 2))}
+                                className="rounded border border-zinc-250 bg-white px-2 py-1 text-[9px] font-bold text-zinc-700 hover:text-zinc-955 shadow-2xs cursor-pointer"
+                              >
+                                Load Template Flow
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      )}
+                            <textarea
+                              rows={6}
+                              value={flowValue}
+                              onChange={(e) => setFlowValue(e.target.value)}
+                              className="w-full rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-850 focus:outline-hidden font-mono shadow-inner"
+                              placeholder='{ "start_node": "...", "nodes": { ... } }'
+                            />
+                            {variantTab === "default" && (
+                              <p className="text-[9px] text-zinc-400 font-semibold">
+                                Shown to customers on the public article page as a self-service, step-by-step guide.
+                              </p>
+                            )}
+                            {flowValue && (
+                              <div className="border border-zinc-200 rounded-lg p-4 bg-zinc-50 mt-2">
+                                <span className="text-[10px] text-zinc-450 font-bold uppercase block mb-3">Live Flow Tester Preview:</span>
+                                {(() => {
+                                  try {
+                                    const parsed = JSON.parse(flowValue);
+                                    return <TroubleshootingPlayer flow={parsed} />;
+                                  } catch (err) {
+                                    return <span className="text-[10px] text-red-500 font-semibold font-mono">Invalid JSON syntax. Fix structure to preview flow player.</span>;
+                                  }
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Picture Guide Direct Upload Card */}
                       <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 
 type ArticleProps = {
   id: string;
@@ -13,6 +14,7 @@ type ArticleProps = {
   shortAnswer: string;
   copyMacro: string;
   numberedSteps: string[];
+  troubleshootingFlow?: any;
   internalNote: string;
   deliveryChannels: string[];
   helpfulPct: number | null;
@@ -127,7 +129,7 @@ export default function AgentArticleClient({
   };
 
   const pillClass = STATUS_PILL[article.status] ?? STATUS_PILL.Draft;
-  const hasContent = article.copyMacro || article.numberedSteps.length > 0 || article.internalNote;
+  const hasContent = article.copyMacro || article.numberedSteps.length > 0 || article.internalNote || article.troubleshootingFlow != null;
 
   // Breadcrumb back navigation
   const backHref = backCategoryId
@@ -266,6 +268,23 @@ export default function AgentArticleClient({
                 </div>
                 <div className="px-8 py-6">
                   <p className="text-sm text-zinc-700 leading-relaxed">{article.copyMacro}</p>
+                </div>
+              </section>
+            )}
+
+            {/* Interactive decision-tree troubleshooting guide */}
+            {article.troubleshootingFlow != null && (
+              <section className="rounded-2xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-8 py-5 border-b border-zinc-100">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-600">
+                      <path d="M12 2v4"/><path d="m6.8 6.8-2.8-2.8"/><path d="M2 12h4"/><path d="m6.8 17.2-2.8 2.8"/><path d="M12 18v4"/><path d="m17.2 17.2 2.8 2.8"/><path d="M18 12h4"/><path d="m17.2 6.8 2.8-2.8"/>
+                    </svg>
+                  </div>
+                  <h2 className="text-sm font-bold text-zinc-900">Interactive troubleshooting guide</h2>
+                </div>
+                <div className="px-8 py-6">
+                  <TroubleshootingPlayer flow={article.troubleshootingFlow} />
                 </div>
               </section>
             )}

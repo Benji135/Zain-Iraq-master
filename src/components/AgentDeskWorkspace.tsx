@@ -748,7 +748,20 @@ export default function AgentDeskWorkspace({
               .then(res => res.ok ? res.json().then(art => ({ ...art, match_score: r.match_score })) : null)
               .catch(() => null)
           );
-          const articles = (await Promise.all(articleFetches)).filter(Boolean);
+          const fetchedArticles = (await Promise.all(articleFetches)).filter(Boolean);
+
+          // Prefer articles that have an interactive troubleshooting guide attached —
+          // a decision-tree walkthrough resolves a reported issue better than plain text.
+          // Sort is stable, so relative match_score ordering is preserved within each group.
+          const hasFlow = (art: any) => {
+            const agentVar = art.variants?.find((v: any) => v.channel === "agent");
+            const defVar = art.variants?.find((v: any) => v.channel === "default");
+            return !!(agentVar?.troubleshooting_flow || defVar?.troubleshooting_flow);
+          };
+          const articles = [...fetchedArticles].sort(
+            (a: any, b: any) => Number(hasFlow(b)) - Number(hasFlow(a))
+          );
+
           setResolutionTopArticles(articles);
           if (articles.length > 0) {
             const top = articles[0];
@@ -1179,6 +1192,7 @@ export default function AgentDeskWorkspace({
                       const defVar = resolutionArticle.variants?.find((v: any) => v.channel === "default");
                       const shortAnswer = agentVar?.short_answer || defVar?.short_answer || "";
                       const detailedSteps = agentVar?.detailed_steps || defVar?.detailed_steps || "";
+                      const troubleshootingFlow = agentVar?.troubleshooting_flow || defVar?.troubleshooting_flow || null;
                       const steps = detailedSteps
                         .split("\n")
                         .filter((line: string) => /^\s*\d+[\.\)]/.test(line))
@@ -1190,6 +1204,13 @@ export default function AgentDeskWorkspace({
 
                       return (
                         <div className="space-y-4">
+                          {troubleshootingFlow != null && (
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-zinc-400 block mb-2">Interactive Troubleshooting Guide</span>
+                              <TroubleshootingPlayer flow={troubleshootingFlow} />
+                            </div>
+                          )}
+
                           {shortAnswer && (
                             <div>
                               <div className="flex items-center justify-between mb-2">

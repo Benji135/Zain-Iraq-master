@@ -3,6 +3,13 @@ import { prisma, getTenantDb } from "@/lib/db";
 import { redirect } from "next/navigation";
 import AdminDeskWorkspace from "@/components/AdminDeskWorkspace";
 
+/** Guards against corrupted timestamp values (e.g. bad legacy data) crashing serialization. */
+function safeISOString(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  const time = new Date(d).getTime();
+  return Number.isNaN(time) ? null : new Date(time).toISOString();
+}
+
 export default async function AdminPage() {
   const session = await auth();
   if (!session || !session.user) {
@@ -78,8 +85,8 @@ export default async function AdminPage() {
     visibility: a.visibility,
     owner_id: a.owner_id,
     author_id: a.author_id,
-    review_due: a.review_due ? a.review_due.toISOString() : null,
-    updated_at: a.updated_at.toISOString(),
+    review_due: safeISOString(a.review_due),
+    updated_at: safeISOString(a.updated_at) || new Date(0).toISOString(),
     category: a.category ? { id: a.category.id, name: a.category.name } : null,
     author: a.author ? { id: a.author.id, name: a.author.name, email: a.author.email } : null,
     owner: a.owner ? { id: a.owner.id, name: a.owner.name, email: a.owner.email } : null,
@@ -130,7 +137,7 @@ export default async function AdminPage() {
     reported_by: g.reported_by,
     claimed_by: g.claimed_by,
     resolving_article_id: g.resolving_article_id,
-    created_at: g.created_at.toISOString(),
+    created_at: safeISOString(g.created_at) || new Date(0).toISOString(),
     reporter: g.reporter ? { name: g.reporter.name, email: g.reporter.email } : null,
     claimer: g.claimer ? { name: g.claimer.name } : null,
     resolving_article: g.resolving_article ? { id: g.resolving_article.id, title: g.resolving_article.title } : null,
