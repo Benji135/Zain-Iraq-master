@@ -102,7 +102,7 @@ export default async function SuperAdminPage() {
     visibility: a.visibility,
     owner_id: a.owner_id,
     author_id: a.author_id,
-    review_due: a.review_due ? a.review_due.toISOString() : null,
+    review_due: a.review_due && !isNaN(a.review_due.getTime()) ? a.review_due.toISOString() : null,
     updated_at: a.updated_at.toISOString(),
     category: a.category ? { id: a.category.id, name: a.category.name } : null,
     author: a.author ? { id: a.author.id, name: a.author.name, email: a.author.email } : null,

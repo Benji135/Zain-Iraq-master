@@ -9,21 +9,58 @@ export async function GET(req: NextRequest) {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { tenant_id: tenantId } = session.user;
+    const { tenant_id: tenantId, role, id: userId } = session.user;
     const db = getTenantDb(tenantId);
     const now = new Date();
 
-    const announcements = await db.announcement.findMany({
-      where: {
-        active: true,
-        OR: [{ starts_at: null }, { starts_at: { lte: now } }],
-        AND: [
-          { OR: [{ ends_at: null }, { ends_at: { gte: now } }] },
-        ],
-      },
-      orderBy: { created_at: "desc" },
-      include: { creator: { select: { name: true } } },
-    });
+    const { searchParams } = new URL(req.url);
+    const isManageMode = searchParams.get("manage") === "true";
+
+    let announcements;
+
+    if (isManageMode && (role === "Admin" || role === "SuperAdmin")) {
+      // Admins in management mode see all announcements (active or inactive)
+      announcements = await db.announcement.findMany({
+        orderBy: { created_at: "desc" },
+        include: { creator: { select: { name: true } } },
+      });
+    } else {
+      // Normal display: filter by active status, date range, audience role, and team target
+      // 1. Get user's teams
+      const userTeams = await db.userTeam.findMany({
+        where: { user_id: userId },
+        select: { team_id: true },
+      });
+      const teamIds = userTeams.map((ut: any) => ut.team_id);
+
+      // 2. Query announcements matching filters
+      announcements = await db.announcement.findMany({
+        where: {
+          active: true,
+          OR: [{ starts_at: null }, { starts_at: { lte: now } }],
+          AND: [
+            { OR: [{ ends_at: null }, { ends_at: { gte: now } }] },
+            {
+              OR: [
+                // Targeted to specific team(s) that the user is in
+                teamIds.length > 0 ? { team_id: { in: teamIds } } : null,
+                // Or not targeted to any specific team (team_id is null) AND matching user role
+                {
+                  team_id: null,
+                  OR: [
+                    { audience: "all" },
+                    role === "Agent" ? { audience: "agents" } : null,
+                    (role === "Admin" || role === "SuperAdmin") ? { audience: "admins" } : null,
+                  ].filter(Boolean) as any,
+                }
+              ].filter(Boolean) as any,
+            }
+          ],
+        },
+        orderBy: { created_at: "desc" },
+        include: { creator: { select: { name: true } } },
+      });
+    }
 
     return NextResponse.json(announcements);
   } catch (error: any) {
