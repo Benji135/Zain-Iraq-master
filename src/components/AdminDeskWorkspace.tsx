@@ -1,0 +1,5131 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { signOut } from "next-auth/react";
+import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
+import { useToast } from "@/components/ToastProvider";
+
+type AdminArticle = {
+  id: string;
+  title: string;
+  slug: string;
+  category_id: string;
+  language: string;
+  status: string;
+  visibility: string;
+  owner_id: string;
+  author_id: string;
+  review_due: string | null;
+  updated_at: string;
+  category?: { id: string; name: string } | null;
+  author?: { id: string; name: string; email: string } | null;
+  owner?: { id: string; name: string; email: string } | null;
+  variants?: any[];
+  status_history?: any[];
+  article_teams?: { team: { id: string; name: string } }[];
+  article_tags?: { tag: { id: string; name: string } }[];
+  created_at?: string;
+  published_at?: string | null;
+  workflow_route_id?: string | null;
+  totalFeedback?: number;
+  helpfulRate?: number | null;
+};
+
+type Category = {
+  id: string;
+  name: string;
+};
+
+type User = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type Gap = {
+  id: string;
+  query_text: string;
+  language: string;
+  channel: string;
+  status: string;
+  occurrences: number;
+  comment?: string | null;
+  source?: string | null;
+  flagged_article_id?: string | null;
+  reported_by: string | null;
+  claimed_by: string | null;
+  resolving_article_id: string | null;
+  created_at: string;
+  reporter?: { name: string; email: string } | null;
+  claimer?: { name: string } | null;
+  resolving_article?: { id: string; title: string } | null;
+  flagged_article?: { id: string; title: string } | null;
+};
+
+type AuditLog = {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  target_label: string;
+  before?: any;
+  after?: any;
+  created_at: string;
+  actor: { name: string; email: string } | null;
+};
+
+type WorkspaceProps = {
+  initialArticles: AdminArticle[];
+  categories: Category[];
+  users: User[];
+  currentUserId: string;
+  currentUserRole: string;
+  tenantId: string;
+  initialGaps: Gap[];
+  userName?: string;
+  userEmail?: string;
+  tenantName?: string;
+  brandingColor?: string;
+  hideSidebar?: boolean;
+  overrideActiveTab?: "articles" | "gaps" | "audit" | "workflows";
+  signOutAction?: () => Promise<void>;
+  initialStatusFilter?: string;
+  initialHelpfulFilter?: string;
+  initialArticleSort?: "updated_at" | "created_at" | "title" | "views" | "status" | "category" | "helpfulRate";
+  initialArticleSortDir?: "asc" | "desc";
+  onUpdateGaps?: (updatedGap: Gap) => void;
+  onUpdateGapsState?: (updatedGaps: Gap[]) => void;
+  onUpdateArticles?: (updatedArticles: AdminArticle[]) => void;
+  seededGap?: { id: string; query_text: string } | null;
+  onRedirectToTab?: (tab: "articles" | "gaps" | "workflows" | "audit", seededGap?: { id: string; query_text: string }) => void;
+};
+
+const SAMPLE_TROUBLESHOOTING_FLOW = {
+  start_node: "node1",
+  nodes: {
+    node1: {
+      text: "Is the SIM card showing 'No Service' or 'Invalid SIM'?",
+      options: [
+        { text: "No Service", next: "node_no_service" },
+        { text: "Invalid SIM", next: "node_invalid_sim" }
+      ]
+    },
+    node_no_service: {
+      text: "Check network coverage. Is automatic network selection enabled in carrier settings?",
+      options: [
+        { text: "Yes, but still no service", next: "escalate_network" },
+        { text: "No, let me enable it", next: "resolve_carrier" }
+      ]
+    },
+    node_invalid_sim: {
+      text: "Clean the SIM copper chip with a dry soft cloth and re-insert. Did it resolve the issue?",
+      is_terminal: false,
+      yes_node: "node2",
+      no_node: "node3"
+    },
+    node2: {
+      text: "Is the SIM card physical or eSIM?",
+      is_terminal: false,
+      yes_node: "escalate_network",
+      no_node: "escalate_replace"
+    },
+    node3: {
+      text: "Try restarting the device. Did it restore connectivity?",
+      is_terminal: false,
+      yes_node: "resolve_network",
+      no_node: "node2"
+    },
+    resolve_network: {
+      text: "Issue resolved by enabling automatic network selection.",
+      is_terminal: true,
+      outcome: "resolve"
+    },
+    escalate_network: {
+      text: "Escalate to Network Engineering: Verify local cell tower outage in client area.",
+      is_terminal: true,
+      outcome: "escalate"
+    },
+    escalate_replace: {
+      text: "Escalate to Customer Care: Recommend SIM swap replacement at Zain Store.",
+      is_terminal: true,
+      outcome: "escalate"
+    }
+  }
+};
+
+export default function AdminDeskWorkspace({
+  initialArticles,
+  categories,
+  users,
+  currentUserId,
+  currentUserRole,
+  tenantId,
+  initialGaps,
+  userName,
+  userEmail,
+  tenantName,
+  brandingColor = "#09090B",
+  hideSidebar = false,
+  overrideActiveTab,
+  signOutAction,
+  onUpdateGaps,
+  onUpdateGapsState,
+  onUpdateArticles,
+  seededGap,
+  onRedirectToTab,
+  initialStatusFilter,
+  initialHelpfulFilter,
+  initialArticleSort,
+  initialArticleSortDir,
+}: WorkspaceProps) {
+  const [articles, setArticles] = useState<AdminArticle[]>(initialArticles);
+  const [gaps, setGaps] = useState<Gap[]>(initialGaps);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditFilterActor, setAuditFilterActor] = useState("");
+  const [auditFilterAction, setAuditFilterAction] = useState("");
+  const [auditFilterTargetType, setAuditFilterTargetType] = useState("");
+  const [auditFilterLabel, setAuditFilterLabel] = useState("");
+  const [auditFilterDateFrom, setAuditFilterDateFrom] = useState("");
+  const [auditFilterDateTo, setAuditFilterDateTo] = useState("");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "articles" | "gaps" | "audit" | "workflows" | "analytics" | "glossary">("dashboard");
+  const [glossarySearch, setGlossarySearch] = useState("");
+  const [glossaryCategory, setGlossaryCategory] = useState("All");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const currentTab = overrideActiveTab || activeTab;
+
+  useEffect(() => {
+    if (onUpdateArticles) {
+      onUpdateArticles(articles);
+    }
+  }, [articles, onUpdateArticles]);
+
+  useEffect(() => {
+    if (onUpdateGapsState) {
+      onUpdateGapsState(gaps);
+    }
+  }, [gaps, onUpdateGapsState]);
+
+  // Articles Filter states
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState(initialStatusFilter ?? "All");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("All Categories");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [articleSort, setArticleSort] = useState<"updated_at" | "created_at" | "title" | "views" | "status" | "category" | "helpfulRate">(initialArticleSort ?? "updated_at");
+  const [articleSortDir, setArticleSortDir] = useState<"desc" | "asc">(initialArticleSortDir ?? "desc");
+  const [selectedHelpfulFilter, setSelectedHelpfulFilter] = useState(initialHelpfulFilter ?? "All");
+  const [articleViewCounts, setArticleViewCounts] = useState<Record<string, number>>({});
+
+  // Guest Link Modal Manager overlay
+  const [activeLinkManagerArticle, setActiveLinkManagerArticle] = useState<AdminArticle | null>(null);
+
+  // Gaps state
+  const [gapStatusFilter, setGapStatusFilter] = useState<string>("ALL");
+  const [resolvingGap, setResolvingGap] = useState<Gap | null>(null);
+  const [selectedResolvingArticleId, setSelectedResolvingArticleId] = useState<string>("");
+
+  // Article Editor state
+  const [editingArticle, setEditingArticle] = useState<AdminArticle | null>(null);
+  const [fullArticleDetail, setFullArticleDetail] = useState<any | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  // Per-field validation error states
+  const [slugError, setSlugError] = useState(false);
+  const [contentError, setContentError] = useState(false);
+  const [teamsError, setTeamsError] = useState(false);
+  const [reviewDueError, setReviewDueError] = useState(false);
+
+  // Variant Editor Sub-tab
+  const [variantTab, setVariantTab] = useState<"default" | "agent" | "chatbot" | "whatsapp">("default");
+
+  // Form Fields
+  const [title, setTitle] = useState("");
+  const [titleError, setTitleError] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [categoryId, setCategoryId] = useState(categories[0]?.id || "");
+  const [language, setLanguage] = useState("en");
+  const [visibility, setVisibility] = useState("PUBLIC");
+  const [ownerId, setOwnerId] = useState(currentUserId);
+  const [reviewDue, setReviewDue] = useState("");
+
+  // Workflow fields
+  const [transitionStatus, setTransitionStatus] = useState("");
+  const [transitionComment, setTransitionComment] = useState("");
+
+  // Custom Workflow Builder state
+  const [workflowRoutes, setWorkflowRoutes] = useState<any[]>([]);
+  const [selectedWorkflowRouteId, setSelectedWorkflowRouteId] = useState("");
+  const [workflowSubTab, setWorkflowSubTab] = useState<"queue" | "builder">("queue");
+  const [editingWorkflow, setEditingWorkflow] = useState<any | null>(null);
+  const [newWorkflowName, setNewWorkflowName] = useState("");
+  const [newWorkflowDesc, setNewWorkflowDesc] = useState("");
+  const [newWorkflowSteps, setNewWorkflowSteps] = useState<{ name: string; role_restriction: string; team_id: string; user_id: string }[]>([]);
+
+  // Variant fields: short answers are used for summaries across channels
+  const [vDefaultShort, setVDefaultShort] = useState(""); // Default variant summary description
+  const [vDefaultDetailed, setVDefaultDetailed] = useState("");
+
+  const [vAgentShort, setVAgentShort] = useState(""); // Agent variant summary description
+  const [vAgentDetailed, setVAgentDetailed] = useState("");
+  const [vAgentMacro, setVAgentMacro] = useState("");
+  const [vAgentFlow, setVAgentFlow] = useState("");
+
+  const [vChatbotShort, setVChatbotShort] = useState(""); // Chatbot variant summary description
+  const [vChatbotDetailed, setVChatbotDetailed] = useState("");
+
+  const [vWhatsappShort, setVWhatsappShort] = useState(""); // WhatsApp variant summary description
+  const [vWhatsappDetailed, setVWhatsappDetailed] = useState("");
+
+  // Initial values for WYSIWYG editors (loaded once when editing article changes)
+  const [initialDefaultDetailed, setInitialDefaultDetailed] = useState("");
+  const [initialAgentDetailed, setInitialAgentDetailed] = useState("");
+  const [initialChatbotDetailed, setInitialChatbotDetailed] = useState("");
+  const [initialWhatsappDetailed, setInitialWhatsappDetailed] = useState("");
+
+  // Refs for WYSIWYG editors
+  const editorRefDefault = useRef<HTMLDivElement>(null);
+  const editorRefAgent = useRef<HTMLDivElement>(null);
+  const editorRefChatbot = useRef<HTMLDivElement>(null);
+  const editorRefWhatsapp = useRef<HTMLDivElement>(null);
+
+  // Image Upload State
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Guest Links State
+  const [guestLinks, setGuestLinks] = useState<any[]>([]);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [transitioningArticleId, setTransitioningArticleId] = useState<string | null>(null);
+  const [deletingArticle, setDeletingArticle] = useState(false);
+  const [claimingGapId, setClaimingGapId] = useState<string | null>(null);
+  const [unresolvingGapId, setUnresolvingGapId] = useState<string | null>(null);
+  const [submittingRejection, setSubmittingRejection] = useState(false);
+
+  // Teams state and fetch
+  const [teams, setTeams] = useState<any[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [isTeamsDropdownOpen, setIsTeamsDropdownOpen] = useState(false);
+
+  // Tags state
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+
+  // Category states
+  const [categoriesList, setCategoriesList] = useState<Category[]>(categories);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState("");
+
+  // Rejection modal states
+  const [rejectionModalArticleId, setRejectionModalArticleId] = useState<string | null>(null);
+  const [rejectionModalComment, setRejectionModalComment] = useState("");
+
+  // Origin Gap tracking for creation
+  const [originGapId, setOriginGapId] = useState<string | null>(null);
+
+  // Date filtering state for Gaps
+  const [gapStartDate, setGapStartDate] = useState("");
+  const [gapEndDate, setGapEndDate] = useState("");
+  const [gapSortOrder, setGapSortOrder] = useState<"newest" | "oldest">("newest");
+
+  // Analytics states
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsWindow, setAnalyticsWindow] = useState<"7d" | "30d" | "all">("7d");
+  const [analyticsChannel, setAnalyticsChannel] = useState<"all" | "agent" | "customer">("all");
+  const [trendHideEmpty, setTrendHideEmpty] = useState(false);
+  const [articleSearchFilter, setArticleSearchFilter] = useState("");
+  const [articleAnalyticsSort, setArticleAnalyticsSort] = useState<"views" | "helpfulPct">("views");
+  const [agentSearchFilter, setAgentSearchFilter] = useState("");
+  const [agentAnalyticsSort, setAgentAnalyticsSort] = useState<"views" | "clicks">("views");
+
+  // Notifications banner state — backed by Announcements API
+  type NotifEntry = { id: string; title: string; message: string; uiType: "info" | "warning" | "success" };
+  const annTypeToUi = (t: string): "info" | "warning" | "success" =>
+    t === "ticker" ? "warning" : t === "broadcast" ? "success" : "info";
+  const uiTypeToAnn = (t: "info" | "warning" | "success") =>
+    t === "warning" ? "ticker" : t === "success" ? "broadcast" : "banner";
+
+  const [notifications, setNotifications] = useState<NotifEntry[]>([]);
+  const [showNotifForm, setShowNotifForm] = useState(false);
+  const [newNotifTitle, setNewNotifTitle] = useState("");
+  const [newNotifMessage, setNewNotifMessage] = useState("");
+  const [newNotifType, setNewNotifType] = useState<"info" | "warning" | "success">("info");
+
+  useEffect(() => {
+    fetch("/api/v1/announcements")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) =>
+        setNotifications(data.map(a => ({ id: a.id, title: a.title, message: a.body, uiType: annTypeToUi(a.type) })))
+      )
+      .catch(() => { });
+  }, []);
+
+  const dismissNotification = async (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    await fetch("/api/v1/announcements", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => { });
+  };
+
+  const addNotification = async () => {
+    const title = newNotifTitle.trim() || newNotifMessage.trim().slice(0, 60);
+    if (!newNotifMessage.trim()) return;
+    const res = await fetch("/api/v1/announcements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, message: newNotifMessage.trim(), type: uiTypeToAnn(newNotifType) }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const data = await res.json();
+      setNotifications(prev => [...prev, { id: data.id, title: data.title, message: data.body, uiType: annTypeToUi(data.type) }]);
+    } else {
+      // Optimistic fallback (offline / permissions)
+      setNotifications(prev => [...prev, { id: Date.now().toString(), title, message: newNotifMessage.trim(), uiType: newNotifType }]);
+    }
+    setNewNotifTitle("");
+    setNewNotifMessage("");
+    setShowNotifForm(false);
+  };
+
+  const downloadCSV = (filename: string, rows: string[][], headers: string[]) => {
+    const csvContent = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        const url = currentUserRole === "SuperAdmin"
+          ? "/api/v1/teams"
+          : `/api/v1/teams?tenant_id=${tenantId}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          setTeams(data);
+        }
+      } catch (err) {
+        console.error("Failed to load teams", err);
+      }
+    };
+    fetchTeams();
+  }, [tenantId]);
+
+  const fetchWorkflowRoutes = async () => {
+    try {
+      const res = await fetch("/api/v1/workflows");
+      if (res.ok) {
+        const data = await res.json();
+        setWorkflowRoutes(data);
+      }
+    } catch (err) {
+      console.error("Failed to load workflow routes", err);
+    }
+  };
+
+  useEffect(() => {
+    if (seededGap) {
+      openCreator();
+      setOriginGapId(seededGap.id);
+      // Clear it in parent by signaling we've handled it
+      if (onRedirectToTab) {
+        onRedirectToTab("articles", undefined);
+      }
+    }
+  }, [seededGap]);
+
+  useEffect(() => {
+    fetchWorkflowRoutes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchAnalytics = async (channelOverride?: "all" | "agent" | "customer") => {
+    setLoadingAnalytics(true);
+    const ch = channelOverride ?? analyticsChannel;
+    try {
+      const res = await fetch(`/api/v1/analytics?tenant_id=${tenantId}&channel=${ch}&_t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAnalyticsData(data);
+        if (data.articleViewCounts) setArticleViewCounts(data.articleViewCounts);
+      }
+    } catch (e) {
+      console.error("Failed to fetch analytics:", e);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
+  // Fetch view counts when articles tab opens (if not already loaded)
+  useEffect(() => {
+    if (currentTab === "articles" && Object.keys(articleViewCounts).length === 0) {
+      fetchAnalytics();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTab]);
+
+  const fetchFilteredGaps = async () => {
+    try {
+      let url = `/api/v1/gaps?status=${gapStatusFilter === "ALL" ? "" : gapStatusFilter}`;
+      if (gapStartDate) {
+        url += `&startDate=${gapStartDate}`;
+      }
+      if (gapEndDate) {
+        url += `&endDate=${gapEndDate}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setGaps(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch gaps", err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentTab === "gaps") {
+      fetchFilteredGaps();
+    }
+  }, [gapStatusFilter, gapStartDate, gapEndDate, currentTab]);
+
+  // Compute filtered articles list based on status, category, and search text filters
+  const filteredArticles = articles.filter((art) => {
+    if (selectedStatusFilter !== "All") {
+      const status = art.status;
+      if (selectedStatusFilter === "Published" && status !== "Published") return false;
+      if (selectedStatusFilter === "Drafts" && status !== "Draft") return false;
+      if (selectedStatusFilter === "In Review" && status !== "InReview") return false;
+      if (selectedStatusFilter === "Approved" && status !== "Approved") return false;
+      if (selectedStatusFilter === "Archived" && status !== "Archived") return false;
+      if (selectedStatusFilter === "Rejected" && status !== "Rejected") return false;
+    }
+
+    if (selectedCategoryFilter !== "All Categories") {
+      if (art.category_id !== selectedCategoryFilter && art.category?.name !== selectedCategoryFilter) return false;
+    }
+
+    if (searchKeyword.trim() !== "") {
+      const kw = searchKeyword.toLowerCase();
+      const titleMatch = art.title.toLowerCase().includes(kw);
+      const idMatch = art.id.toLowerCase().includes(kw);
+      const bodyMatch = art.variants?.some(v => v.detailed_steps?.toLowerCase().includes(kw) || v.short_answer?.toLowerCase().includes(kw));
+      if (!titleMatch && !idMatch && !bodyMatch) return false;
+    }
+
+    if (selectedHelpfulFilter !== "All") {
+      const rate = art.helpfulRate ?? null;
+      if (selectedHelpfulFilter === "no-ratings" && rate !== null) return false;
+      if (selectedHelpfulFilter === "high" && (rate === null || rate < 80)) return false;
+      if (selectedHelpfulFilter === "medium" && (rate === null || rate < 60 || rate >= 80)) return false;
+      if (selectedHelpfulFilter === "low" && (rate === null || rate >= 60)) return false;
+    }
+
+    return true;
+  });
+
+  // Sort filtered articles
+  const sortedFilteredArticles = [...filteredArticles].sort((a, b) => {
+    let cmp = 0;
+    switch (articleSort) {
+      case "title":
+        cmp = a.title.localeCompare(b.title);
+        break;
+      case "category":
+        cmp = (a.category?.name || "").localeCompare(b.category?.name || "");
+        break;
+      case "status":
+        cmp = a.status.localeCompare(b.status);
+        break;
+      case "views":
+        cmp = (articleViewCounts[a.id] || 0) - (articleViewCounts[b.id] || 0);
+        break;
+      case "created_at": {
+        const aDate = a.published_at || a.created_at || a.updated_at;
+        const bDate = b.published_at || b.created_at || b.updated_at;
+        cmp = new Date(aDate).getTime() - new Date(bDate).getTime();
+        break;
+      }
+      case "helpfulRate":
+        // null/undefined (no ratings) sorts to the bottom regardless of direction
+        if ((a.helpfulRate ?? null) === null && (b.helpfulRate ?? null) === null) { cmp = 0; break; }
+        if ((a.helpfulRate ?? null) === null) { return 1; }
+        if ((b.helpfulRate ?? null) === null) { return -1; }
+        cmp = (a.helpfulRate as number) - (b.helpfulRate as number);
+        break;
+      case "updated_at":
+      default:
+        cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+        break;
+    }
+    return articleSortDir === "asc" ? cmp : -cmp;
+  });
+
+  const toggleSort = (field: typeof articleSort) => {
+    if (articleSort === field) {
+      setArticleSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setArticleSort(field);
+      setArticleSortDir(field === "title" || field === "category" ? "asc" : "desc");
+    }
+  };
+
+  // Fetch guest links on editing article change
+  useEffect(() => {
+    if (editingArticle) {
+      fetchGuestLinks(editingArticle.id);
+    } else {
+      setGuestLinks([]);
+    }
+  }, [editingArticle]);
+
+  const fetchGuestLinks = async (articleId: string) => {
+    try {
+      const res = await fetch(`/api/v1/articles/${articleId}/guest-links`);
+      if (res.ok) {
+        const data = await res.json();
+        setGuestLinks(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch guest links:", e);
+    }
+  };
+
+
+
+  useEffect(() => {
+    if (currentTab === "audit") {
+      fetchAuditLogs();
+    } else if (currentTab === "analytics" || currentTab === "dashboard") {
+      fetchAnalytics();
+    }
+  }, [currentTab]);
+
+  // Load visual editor initial HTML contents when editing article changes (uncontrolled editor initialization)
+  useEffect(() => {
+    if (editorRefDefault.current) {
+      editorRefDefault.current.innerHTML = initialDefaultDetailed;
+    }
+  }, [initialDefaultDetailed]);
+
+  useEffect(() => {
+    if (editorRefAgent.current) {
+      editorRefAgent.current.innerHTML = initialAgentDetailed;
+    }
+  }, [initialAgentDetailed]);
+
+  useEffect(() => {
+    if (editorRefChatbot.current) {
+      editorRefChatbot.current.innerHTML = initialChatbotDetailed;
+    }
+  }, [initialChatbotDetailed]);
+
+  useEffect(() => {
+    if (editorRefWhatsapp.current) {
+      editorRefWhatsapp.current.innerHTML = initialWhatsappDetailed;
+    }
+  }, [initialWhatsappDetailed]);
+
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
+
+  const fetchAuditLogs = async () => {
+    setLoadingAuditLogs(true);
+    try {
+      // SuperAdmin omits tenant_id to receive logs from all tenants
+      const url = currentUserRole === "SuperAdmin"
+        ? "/api/v1/audit"
+        : `/api/v1/audit?tenant_id=${tenantId}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  const handleGenerateGuestLink = async () => {
+    if (!editingArticle) return;
+    setGeneratingLink(true);
+    try {
+      const res = await fetch(`/api/v1/articles/${editingArticle.id}/guest-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "default" }),
+      });
+      if (res.ok) {
+        const newLink = await res.json();
+        setGuestLinks([newLink, ...guestLinks]);
+        toast("Guest link generated.", "success");
+      } else {
+        throw new Error("Failed to generate link");
+      }
+    } catch (e) {
+      toast("Failed to generate guest link.", "error");
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  const handleRevokeGuestLink = async (linkId: string, revokedStatus: boolean) => {
+    if (!editingArticle) return;
+    try {
+      const res = await fetch(`/api/v1/articles/${editingArticle.id}/guest-links`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link_id: linkId, revoked: revokedStatus }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setGuestLinks(guestLinks.map((l) => (l.id === linkId ? updated : l)));
+        toast(revokedStatus ? "Guest link revoked." : "Guest link restored.", "success");
+      } else {
+        throw new Error("Failed to update link");
+      }
+    } catch (e) {
+      toast("Failed to update guest link.", "error");
+    }
+  };
+
+
+
+  const executeCommand = (command: string, value: string = "") => {
+    // 1. Restore focus to the active editor ref before executing the command
+    const activeEditor =
+      variantTab === "default" ? editorRefDefault.current :
+        variantTab === "agent" ? editorRefAgent.current :
+          variantTab === "chatbot" ? editorRefChatbot.current :
+            editorRefWhatsapp.current;
+
+    if (activeEditor) {
+      activeEditor.focus();
+    }
+
+    // 2. Execute the document command
+    if (command === "fontSize") {
+      const sizeMap: Record<string, string> = {
+        "12": "2",
+        "14": "3",
+        "16": "4",
+        "18": "5",
+        "20": "6"
+      };
+      document.execCommand(command, false, sizeMap[value] || "4");
+    } else if (command === "createLink") {
+      const url = prompt("Enter URL:", "https://");
+      if (url) {
+        document.execCommand(command, false, url);
+      }
+    } else if (command === "insertImage") {
+      const url = prompt("Enter Image URL:", "https://");
+      if (url) {
+        document.execCommand(command, false, url);
+      }
+    } else if (command === "insertTable") {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const el = document.createElement("div");
+        el.innerHTML = `<table style="width:100%; border-collapse:collapse; border:1px solid #e4e4e7; margin:10px 0;">
+          <thead>
+            <tr style="background:#f4f4f5;">
+              <th style="border:1px solid #e4e4e7; padding:8px; text-align:left;">Header 1</th>
+              <th style="border:1px solid #e4e4e7; padding:8px; text-align:left;">Header 2</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border:1px solid #e4e4e7; padding:8px;">Cell 1</td>
+              <td style="border:1px solid #e4e4e7; padding:8px;">Cell 2</td>
+            </tr>
+          </tbody>
+        </table>`;
+        const frag = document.createDocumentFragment();
+        let node;
+        while ((node = el.firstChild)) {
+          frag.appendChild(node);
+        }
+        range.insertNode(frag);
+      }
+    } else if (command === "clearFormatting") {
+      document.execCommand("removeFormat", false);
+    } else {
+      document.execCommand(command, false, value);
+    }
+
+    // 3. Manually trigger state update from visual innerHTML contents
+    if (activeEditor) {
+      const newHTML = activeEditor.innerHTML;
+      if (variantTab === "default") setVDefaultDetailed(newHTML);
+      else if (variantTab === "agent") setVAgentDetailed(newHTML);
+      else if (variantTab === "chatbot") setVChatbotDetailed(newHTML);
+      else if (variantTab === "whatsapp") setVWhatsappDetailed(newHTML);
+    }
+  };
+
+  const handleDirectStatusTransition = async (articleId: string, targetStatus: string, customComment?: string) => {
+    try {
+      const art = articles.find(a => a.id === articleId);
+      if (!art) return;
+
+      // Separation of duties check
+      if ((targetStatus === "Approved" || targetStatus === "Published") && art.author_id === currentUserId) {
+        toast("Separation of duties: you authored this article and cannot approve or publish it.", "error");
+        return;
+      }
+
+      if (targetStatus === "Draft" && !customComment) {
+        setRejectionModalArticleId(articleId);
+        setRejectionModalComment("");
+        return;
+      }
+
+      setTransitioningArticleId(articleId);
+      if (customComment) setSubmittingRejection(true);
+
+      const res = await fetch(`/api/v1/articles/${articleId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: targetStatus,
+          comment: customComment || `Direct status transition to ${targetStatus} from dashboard`,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `Failed to transition article to ${targetStatus}`);
+      }
+
+      const updated = await res.json();
+      setArticles(articles.map((a) => (a.id === updated.id ? updated : a)));
+      toast(`Article moved to ${targetStatus}.`, "success");
+
+      // Clear rejection modal if open
+      setRejectionModalArticleId(null);
+      setRejectionModalComment("");
+    } catch (err: any) {
+      toast(err.message || "Failed to update article status.", "error");
+    } finally {
+      setTransitioningArticleId(null);
+      setSubmittingRejection(false);
+    }
+  };
+
+  // Helper to pre-populate slug from title
+  const handleTitleChange = (val: string) => {
+    setTitle(val);
+    if (val.trim()) { setTitleError(false); }
+    if (!editingArticle) {
+      const autoSlug = val.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+      setSlug(autoSlug);
+      if (autoSlug) setSlugError(false);
+    }
+  };
+
+
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/v1/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+
+      const data = await res.json();
+      const imageUrl = data.url;
+
+      // Insert image visually into the active editor
+      const imgHtml = `<img src="${imageUrl}" alt="Uploaded Image" style="max-width:100%; height:auto; margin:10px 0; border-radius:8px; border:1px solid #e4e4e7;" />`;
+
+      const activeEditor =
+        variantTab === "default" ? editorRefDefault.current :
+          variantTab === "agent" ? editorRefAgent.current :
+            variantTab === "chatbot" ? editorRefChatbot.current :
+              editorRefWhatsapp.current;
+
+      if (activeEditor) {
+        activeEditor.focus();
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          const tempDiv = document.createElement("div");
+          tempDiv.innerHTML = imgHtml;
+          const node = tempDiv.firstChild;
+          if (node) {
+            range.insertNode(node);
+            range.collapse(false);
+          }
+        } else {
+          // Fallback if no selection
+          activeEditor.innerHTML += imgHtml;
+        }
+
+        // Update state
+        const newHTML = activeEditor.innerHTML;
+        if (variantTab === "default") setVDefaultDetailed(newHTML);
+        else if (variantTab === "agent") setVAgentDetailed(newHTML);
+        else if (variantTab === "chatbot") setVChatbotDetailed(newHTML);
+        else if (variantTab === "whatsapp") setVWhatsappDetailed(newHTML);
+      }
+
+      toast("Image uploaded and link inserted.", "success");
+    } catch (err: any) {
+      toast(err.message || "Image upload failed.", "error");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const openEditor = async (article: AdminArticle) => {
+    setEditingArticle(article);
+    setFullArticleDetail(null);
+    setIsCreating(false);
+    setTitleError(false);
+    setSlugError(false);
+    setContentError(false);
+    setTeamsError(false);
+    setReviewDueError(false);
+
+    setTitle(article.title);
+    setSlug(article.slug);
+    setCategoryId(article.category_id);
+    setLanguage(article.language);
+    setVisibility(article.visibility);
+    setOwnerId(article.owner_id);
+    setReviewDue(article.review_due ? new Date(article.review_due).toISOString().slice(0, 10) : "");
+
+    // Set transition status defaults
+    setTransitionStatus("");
+    setTransitionComment("");
+    // Reset variants
+    const dV = article.variants?.find((v) => v.channel === "default");
+    const defaultVal = dV?.detailed_steps || "";
+    setVDefaultShort(dV?.short_answer || "");
+    setVDefaultDetailed(defaultVal);
+    setInitialDefaultDetailed(defaultVal);
+
+    const aV = article.variants?.find((v) => v.channel === "agent");
+    const agentVal = aV?.detailed_steps || "";
+    setVAgentShort(aV?.short_answer || "");
+    setVAgentDetailed(agentVal);
+    setInitialAgentDetailed(agentVal);
+    setVAgentMacro(aV?.copy_ready_macro || "");
+    setVAgentFlow(aV?.troubleshooting_flow ? JSON.stringify(aV.troubleshooting_flow, null, 2) : "");
+
+    const cV = article.variants?.find((v) => v.channel === "chatbot");
+    const chatbotVal = cV?.detailed_steps || "";
+    setVChatbotShort(cV?.short_answer || "");
+    setVChatbotDetailed(chatbotVal);
+    setInitialChatbotDetailed(chatbotVal);
+
+    const wV = article.variants?.find((v) => v.channel === "whatsapp");
+    const whatsappVal = wV?.detailed_steps || "";
+    setVWhatsappShort(wV?.short_answer || "");
+    setVWhatsappDetailed(whatsappVal);
+    setInitialWhatsappDetailed(whatsappVal);
+
+    // Load assigned teams and workflow route
+    setSelectedTeams(article.article_teams?.map((at: any) => at.team.id) || []);
+    setTags(article.article_tags?.map((at: any) => at.tag.name) || []);
+
+    try {
+      const res = await fetch(`/api/v1/articles/${article.id}`);
+      if (res.ok) {
+        const fullDetail = await res.json();
+        setFullArticleDetail(fullDetail);
+        if (fullDetail.article_teams) {
+          setSelectedTeams(fullDetail.article_teams.map((at: any) => at.team.id));
+        }
+        if (fullDetail.article_tags) {
+          setTags(fullDetail.article_tags.map((at: any) => at.tag.name));
+        }
+        if (fullDetail.workflow_route_id) {
+          setSelectedWorkflowRouteId(fullDetail.workflow_route_id);
+        } else {
+          setSelectedWorkflowRouteId("");
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching article details:", e);
+    }
+  };
+
+  const openCreator = () => {
+    setEditingArticle(null);
+    setIsCreating(true);
+    setTitleError(false);
+    setSlugError(false);
+    setContentError(false);
+    setTeamsError(false);
+    setReviewDueError(false);
+    setTransitionStatus("");
+    setTransitionComment("");
+
+    setTitle("");
+    setSlug("");
+    setCategoryId(categoriesList[0]?.id || "");
+    setLanguage("en");
+    setVisibility("PUBLIC");
+    setOwnerId(currentUserId);
+    setReviewDue("");
+    setSelectedTeams([]);
+    setSelectedWorkflowRouteId("");
+    setTags([]);
+    setTagInput("");
+
+    setVDefaultShort("");
+    setVDefaultDetailed("");
+    setInitialDefaultDetailed("");
+    setVAgentShort("");
+    setVAgentDetailed("");
+    setInitialAgentDetailed("");
+    setVAgentMacro("");
+    setVAgentFlow("");
+    setVChatbotShort("");
+    setVChatbotDetailed("");
+    setInitialChatbotDetailed("");
+    setVWhatsappShort("");
+    setVWhatsappDetailed("");
+    setInitialWhatsappDetailed("");
+  };
+
+  const closeEditor = () => {
+    setEditingArticle(null);
+    setIsCreating(false);
+    setTransitionStatus("");
+    setTransitionComment("");
+    setSelectedWorkflowRouteId("");
+    setIsTeamsDropdownOpen(false);
+    setTitleError(false);
+  };
+
+  const handleCreateCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    setCategoryError("");
+    try {
+      const res = await fetch("/api/v1/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (res.ok) {
+        const newCat = await res.json();
+        setCategoriesList([...categoriesList, newCat]);
+        setCategoryId(newCat.id);
+        setIsAddingCategory(false);
+        setNewCategoryName("");
+      } else {
+        const err = await res.json();
+        setCategoryError(err.error || "Failed to create category");
+      }
+    } catch (e) {
+      console.error(e);
+      setCategoryError("Failed to create category due to connection error.");
+    }
+  };
+
+  const startNewWorkflow = () => {
+    setNewWorkflowName("");
+    setNewWorkflowDesc("");
+    setNewWorkflowSteps([]);
+    setEditingWorkflow({ id: "new", name: "" });
+  };
+
+  const startEditWorkflow = (route: any) => {
+    setNewWorkflowName(route.name);
+    setNewWorkflowDesc(route.description || "");
+    setNewWorkflowSteps(
+      (route.steps || []).map((s: any) => ({
+        name: s.name,
+        role_restriction: s.role_restriction,
+        team_id: s.team_id || "",
+        user_id: s.user_id || "",
+      }))
+    );
+    setEditingWorkflow(route);
+  };
+
+  const handleSaveWorkflow = async () => {
+    if (!newWorkflowName.trim() || newWorkflowSteps.length === 0) return;
+    const isNew = editingWorkflow?.id === "new";
+    const url = isNew ? "/api/v1/workflows" : `/api/v1/workflows/${editingWorkflow.id}`;
+    const method = isNew ? "POST" : "PUT";
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newWorkflowName.trim(),
+          description: newWorkflowDesc.trim() || null,
+          steps: newWorkflowSteps.map(s => ({
+            name: s.name.trim(),
+            role_restriction: s.role_restriction,
+            team_id: s.team_id || null,
+            user_id: s.user_id || null,
+          })),
+        }),
+      });
+      if (res.ok) {
+        await fetchWorkflowRoutes();
+        setEditingWorkflow(null);
+        toast("Workflow saved.", "success");
+      } else {
+        toast("Failed to save workflow.", "error");
+      }
+    } catch (err) {
+      toast("Failed to save workflow.", "error");
+    }
+  };
+
+  const handleDeleteWorkflow = async (id: string) => {
+    if (!confirm("Delete this workflow? Articles using it will lose the route assignment.")) return;
+    try {
+      const res = await fetch(`/api/v1/workflows/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setWorkflowRoutes(prev => prev.filter(r => r.id !== id));
+        toast("Workflow deleted.", "info");
+      } else {
+        toast("Failed to delete workflow.", "error");
+      }
+    } catch (err) {
+      toast("Failed to delete workflow.", "error");
+    }
+  };
+
+  const handleSaveArticle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const defaultDetailedTextClean = vDefaultDetailed.replace(/<[^>]*>/g, "").trim();
+
+    // Validate all fields at once so every error shows simultaneously
+    let hasErrors = false;
+    if (!title.trim()) { setTitleError(true); hasErrors = true; }
+    if (!slug.trim()) { setSlugError(true); hasErrors = true; }
+    if (!defaultDetailedTextClean) { setContentError(true); hasErrors = true; }
+    if (selectedTeams.length === 0) { setTeamsError(true); hasErrors = true; }
+    if (!reviewDue) { setReviewDueError(true); hasErrors = true; }
+    if (hasErrors) {
+      toast("Please fill in all required fields before saving.", "warning");
+      return;
+    }
+
+    setSaving(true);
+    setTitleError(false);
+    setSlugError(false);
+    setContentError(false);
+    setTeamsError(false);
+    setReviewDueError(false);
+
+    // Prepare variants payload
+    const variantsPayload = [
+      { channel: "default", short_answer: vDefaultShort, detailed_steps: vDefaultDetailed },
+      { channel: "agent", short_answer: vAgentShort, detailed_steps: vAgentDetailed, copy_ready_macro: vAgentMacro, troubleshooting_flow: vAgentFlow ? JSON.parse(vAgentFlow) : null },
+      { channel: "chatbot", short_answer: vChatbotShort, detailed_steps: vChatbotDetailed },
+      { channel: "whatsapp", short_answer: vWhatsappShort, detailed_steps: vWhatsappDetailed },
+    ];
+
+    try {
+      if (isCreating) {
+        const res = await fetch("/api/v1/articles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            slug,
+            category_id: categoryId,
+            language,
+            visibility,
+            owner_id: ownerId,
+            review_due: reviewDue || null,
+            bodyText: vDefaultDetailed,
+            team_ids: selectedTeams,
+            workflow_route_id: selectedWorkflowRouteId || null,
+            tags: tags,
+            origin_gap_id: originGapId || undefined,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to create article");
+        }
+
+        const created = await res.json();
+
+        // Save variants inline (since POST creates a default variant, we update variants using PUT)
+        const putPayload: any = {
+          variants: variantsPayload,
+          team_ids: selectedTeams,
+          workflow_route_id: selectedWorkflowRouteId || null,
+          tags: tags,
+        };
+        if (transitionStatus) {
+          putPayload.status = transitionStatus;
+          putPayload.comment = transitionComment;
+        }
+
+        const putRes = await fetch(`/api/v1/articles/${created.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(putPayload),
+        });
+
+        if (!putRes.ok) {
+          const err = await putRes.json();
+          throw new Error(err.error || "Article created, but failed to save channel variants.");
+        }
+
+        const finalArticle = await putRes.json();
+        setArticles([finalArticle, ...articles]);
+        toast("Article created successfully!", "success");
+
+        if (originGapId) {
+          try {
+            const resResolve = await fetch("/api/v1/gaps", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: originGapId,
+                status: "RESOLVED",
+                resolving_article_id: finalArticle.id,
+              }),
+            });
+            if (resResolve.ok) {
+              const updatedGap = await resResolve.json();
+              setGaps(gaps.map((g) => (g.id === originGapId ? updatedGap : g)));
+              if (onUpdateGaps) {
+                onUpdateGaps(updatedGap);
+              }
+            }
+          } catch (e) {
+            console.error("Failed to automatically resolve gap:", e);
+          }
+          setOriginGapId(null);
+        }
+
+        setTimeout(() => closeEditor(), 1000);
+      } else if (editingArticle) {
+        // Prepare PUT payload
+        const payload: any = {
+          title,
+          slug,
+          category_id: categoryId,
+          language,
+          visibility,
+          owner_id: ownerId,
+          review_due: reviewDue || null,
+          variants: variantsPayload,
+          team_ids: selectedTeams,
+          workflow_route_id: selectedWorkflowRouteId || null,
+          tags: tags,
+        };
+
+        if (transitionStatus) {
+          payload.status = transitionStatus;
+          payload.comment = transitionComment;
+        }
+
+        const res = await fetch(`/api/v1/articles/${editingArticle.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to update article");
+        }
+
+        const updated = await res.json();
+        setArticles(articles.map((a) => (a.id === updated.id ? updated : a)));
+        toast("Article updated successfully!", "success");
+        setTimeout(() => closeEditor(), 1000);
+      }
+    } catch (err: any) {
+      toast(err.message || "Failed to save article", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteArticle = async (articleId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this article?")) return;
+
+    setDeletingArticle(true);
+    try {
+      const res = await fetch(`/api/v1/articles/${articleId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete article");
+      }
+
+      setArticles(articles.filter((a) => a.id !== articleId));
+      closeEditor();
+      toast("Article deleted.", "info");
+    } catch (err: any) {
+      toast(err.message || "Failed to delete article.", "error");
+    } finally {
+      setDeletingArticle(false);
+    }
+  };
+
+  // Gap Claim/Resolution Actions
+  const handleClaimGap = async (gapId: string) => {
+    setClaimingGapId(gapId);
+    try {
+      const res = await fetch("/api/v1/gaps", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: gapId, claim: true }),
+      });
+      if (!res.ok) throw new Error("Failed to claim gap");
+      const updated = await res.json();
+      setGaps(gaps.map((g) => (g.id === gapId ? updated : g)));
+      if (onUpdateGaps) {
+        onUpdateGaps(updated);
+      }
+      toast("Gap claimed — it's now assigned to you.", "success");
+    } catch (err: any) {
+      toast(err.message || "Failed to claim gap.", "error");
+    } finally {
+      setClaimingGapId(null);
+    }
+  };
+
+  const handleResolveGapSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingGap || !selectedResolvingArticleId) return;
+
+    try {
+      const res = await fetch("/api/v1/gaps", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: resolvingGap.id,
+          status: "RESOLVED",
+          resolving_article_id: selectedResolvingArticleId,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to resolve gap");
+      }
+
+      const updated = await res.json();
+      setGaps(gaps.map((g) => (g.id === resolvingGap.id ? updated : g)));
+      if (onUpdateGaps) {
+        onUpdateGaps(updated);
+      }
+      setResolvingGap(null);
+      setSelectedResolvingArticleId("");
+      toast("Gap resolved and linked to article.", "success");
+    } catch (err: any) {
+      toast(err.message || "Failed to resolve gap.", "error");
+    }
+  };
+
+  const handleUnresolveGap = async (gapId: string) => {
+    setUnresolvingGapId(gapId);
+    try {
+      const res = await fetch("/api/v1/gaps", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: gapId, status: "IN_PROGRESS" }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to unresolve gap");
+      }
+      const updated = await res.json();
+      setGaps(gaps.map((g) => (g.id === gapId ? updated : g)));
+      if (onUpdateGaps) {
+        onUpdateGaps(updated);
+      }
+      toast("Gap rolled back to In Progress.", "info");
+    } catch (err: any) {
+      toast(err.message || "Failed to unresolve gap.", "error");
+    } finally {
+      setUnresolvingGapId(null);
+    }
+  };
+
+  const handleCreateArticleFromGap = (gap: Gap) => {
+    if (onRedirectToTab) {
+      onRedirectToTab("articles", { id: gap.id, query_text: gap.query_text });
+    } else {
+      openCreator();
+      setOriginGapId(gap.id);
+      setActiveTab("articles");
+    }
+  };
+
+  // Check if a specific variant is empty
+  const isVariantEmpty = (channel: string) => {
+    if (channel === "agent") return !vAgentDetailed && !vAgentShort;
+    if (channel === "chatbot") return !vChatbotDetailed && !vChatbotShort;
+    if (channel === "whatsapp") return !vWhatsappDetailed && !vWhatsappShort;
+    return false;
+  };
+
+  // Allowed transitions based on current status
+  const getAllowedStatusTransitions = (currentStatus: string) => {
+    if (currentStatus === "Draft") return [{ status: "InReview", label: "Submit for Review" }];
+    if (currentStatus === "InReview") {
+      return [
+        { status: "Approved", label: "Approve Draft" },
+        { status: "Rejected", label: "Reject Article" },
+      ];
+    }
+    if (currentStatus === "Approved") {
+      return [
+        { status: "Published", label: "Publish Article" },
+        { status: "Rejected", label: "Reject Article" },
+      ];
+    }
+    if (currentStatus === "Published") {
+      return [
+        { status: "Archived", label: "Archive Article" },
+        { status: "Rejected", label: "Reject Article" },
+      ];
+    }
+    if (currentStatus === "Archived") {
+      return [{ status: "Draft", label: "Restore to Draft" }];
+    }
+    if (currentStatus === "Rejected") {
+      return [{ status: "Draft", label: "Restore to Draft" }];
+    }
+    return [];
+  };
+
+
+
+  return (
+    <div className={`text-left ${hideSidebar ? "w-full" : "min-h-screen flex bg-zinc-50 w-full relative overflow-x-hidden"}`}>
+      <style>{`
+  @keyframes tabFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .tab-fade-in { animation: tabFadeIn 0.18s ease both; }
+`}</style>
+      {/* Sidebar Backdrop for Mobile */}
+      {!hideSidebar && mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-zinc-950/60 backdrop-blur-xs md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - only show if hideSidebar is false */}
+      {!hideSidebar && (
+        <aside className={`w-56 flex-shrink-0 bg-[#0c0c14] border-r border-white/[0.06] flex flex-col justify-between fixed inset-y-0 left-0 z-50 transform md:sticky md:translate-x-0 transition-transform duration-300 ease-in-out h-screen shadow-[4px_0_24px_rgba(0,0,0,0.35)] ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}>
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {/* Brand */}
+            <div className="px-5 py-5 border-b border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <img src="/images/zain-logo.png" alt="Zain Iraq" className="h-8 w-auto object-contain flex-shrink-0 brightness-0 invert" />
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <nav className="px-3 pt-5 space-y-5">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-3 mb-2">Workspace</p>
+                <div className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("dashboard");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "dashboard" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "dashboard" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "dashboard" ? "text-amber-400/80" : ""}`}>
+                      <rect x="3" y="3" width="7" height="9" rx="1" />
+                      <rect x="14" y="3" width="7" height="5" rx="1" />
+                      <rect x="14" y="12" width="7" height="9" rx="1" />
+                      <rect x="3" y="16" width="7" height="5" rx="1" />
+                    </svg>
+                    Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("articles");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "articles" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "articles" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "articles" ? "text-amber-400/80" : ""}`}>
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <line x1="10" y1="9" x2="8" y2="9" />
+                    </svg>
+                    Articles Manager
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("gaps");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "gaps" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "gaps" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "gaps" ? "text-amber-400/80" : ""}`}>
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    Gaps Queue
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("workflows");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "workflows" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "workflows" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "workflows" ? "text-amber-400/80" : ""}`}>
+                      <polyline points="17 1 21 5 17 9" />
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                      <polyline points="7 23 3 19 7 15" />
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                    </svg>
+                    Workflows
+                    {articles.filter(a => a.status === "InReview" || a.status === "Approved").length > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-extrabold bg-amber-400/20 text-amber-300 border border-amber-400/20">
+                        {articles.filter(a => a.status === "InReview" || a.status === "Approved").length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("audit");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "audit" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "audit" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "audit" ? "text-amber-400/80" : ""}`}>
+                      <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                      <path d="M12 6v6l4 2" />
+                    </svg>
+                    Audit Logs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("glossary"); closeEditor(); setMobileSidebarOpen(false); }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "glossary" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "glossary" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "glossary" ? "text-amber-400/80" : ""}`}>
+                      <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
+                    </svg>
+                    Glossary
+                  </button>
+                </div>
+              </div>
+            </nav>
+          </div>
+
+          {/* User Footer */}
+          <div className="px-3 pt-4 pb-4 border-t border-white/[0.06] space-y-3 flex-shrink-0">
+            <div className="flex items-center gap-2.5 px-1">
+              <div className="h-7 w-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
+                <span className="text-[11px] font-bold text-indigo-300">{userName?.[0]?.toUpperCase() ?? "A"}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold text-white truncate leading-none mb-0.5">{userName}</div>
+                <div className="text-[10px] font-mono text-white/35 truncate">{userEmail}</div>
+              </div>
+            </div>
+            <div className="px-1">
+              <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[9px] font-bold uppercase tracking-widest bg-amber-400/[0.08] border border-amber-400/[0.15] text-amber-400/70">
+                <span className="h-1 w-1 rounded-full bg-amber-400/70" />
+                {currentUserRole}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await signOut({ redirect: false });
+                window.location.href = "/login";
+              }}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/[0.13] px-3 py-2 text-[11px] font-semibold text-white/40 hover:text-white/70 transition-all"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sign Out
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* Main Content Area */}
+      <div className={`flex-1 flex flex-col ${hideSidebar ? "" : "h-screen overflow-hidden bg-zinc-50"}`}>
+        {/* Header Bar - only show if hideSidebar is false */}
+        {!hideSidebar && (
+          <header className="h-16 border-b border-zinc-200 bg-white flex items-center justify-between px-4 md:px-8 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              {/* Hamburger Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(true)}
+                className="md:hidden p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="6" x2="20" y2="6" />
+                  <line x1="4" y1="18" x2="20" y2="18" />
+                </svg>
+              </button>
+              <h2 className="text-sm font-extrabold text-zinc-955 uppercase tracking-wide">
+                {currentTab === "dashboard" ? "Analytics Dashboard" : currentTab === "articles" ? "Articles Manager" : currentTab === "gaps" ? "Gaps Queue" : currentTab === "workflows" ? "Workflows" : currentTab === "audit" ? "Audit Logs" : currentTab === "glossary" ? "Glossary" : "Analytics"}
+              </h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:inline-flex items-center rounded-lg bg-zinc-50 border border-zinc-200 px-2.5 py-1 text-[10px] font-bold text-zinc-650">
+                Tenant Key: <code className="ml-1.5 font-mono text-[9px] text-zinc-800">{tenantId}</code>
+              </span>
+            </div>
+          </header>
+        )}
+
+        {/* View Contents */}
+        <div key={currentTab} className={hideSidebar ? "" : "flex-1 overflow-y-auto p-4 md:p-8 tab-fade-in"}>
+          {/* Notifications Banner — backed by Announcements API */}
+          {!hideSidebar && notifications.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {notifications.map(n => (
+                <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${n.uiType === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
+                    n.uiType === "success" ? "border-green-200 bg-green-50 text-green-800" :
+                      "border-blue-200 bg-blue-50 text-blue-800"
+                  }`}>
+                  <div className="flex items-start gap-2">
+                    <span>{n.uiType === "warning" ? "⚠️" : n.uiType === "success" ? "✅" : "ℹ️"}</span>
+                    <div>
+                      {n.title && n.title !== n.message.slice(0, 60) && (
+                        <p className="font-extrabold mb-0.5">{n.title}</p>
+                      )}
+                      <span>{n.message}</span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => dismissNotification(n.id)} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity font-bold">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Welcome Banner inside Content Panel for full-bleed Admin Workspace only */}
+          {!hideSidebar && currentTab === "articles" && !editingArticle && !isCreating && (
+            <div
+              className="rounded-xl border border-zinc-200 border-l-4 bg-white p-6 shadow-sm mb-6"
+              style={{ borderLeftColor: brandingColor }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left">
+                <div>
+                  <h2 className="text-lg font-extrabold text-zinc-955 text-left">Welcome, {userName}!</h2>
+                  <p className="text-xs font-semibold text-zinc-500 mt-1">
+                    Manage articles, approve status changes, and resolve gaps for <strong className="text-zinc-850">{tenantName}</strong>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ARTICLES MANAGER VIEW */}
+          {currentTab === "articles" && (
+            <div className="space-y-6">
+              {!editingArticle && !isCreating ? (
+                /* Table list view matching the Mockup */
+                <div className="space-y-6">
+                  {/* Header Title and + New Article button */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-left">
+                      <h2 className="text-xl font-extrabold text-zinc-950">All Articles</h2>
+                      <p className="text-xs text-zinc-500 font-medium mt-1">
+                        {sortedFilteredArticles.length} articles · {categories.length} categories · 2 languages
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openCreator}
+                      className="rounded-lg bg-zinc-950 hover:bg-zinc-800 px-4 py-2.5 text-xs font-bold text-white shadow-xs transition-all flex items-center gap-1.5"
+                    >
+                      <span className="text-sm font-light">+</span> New Article
+                    </button>
+                  </div>
+
+                  {/* Filters Toolbar Row */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    {/* Tabs */}
+                    <div className="flex bg-zinc-200/60 p-1 rounded-lg gap-1 border border-zinc-200 overflow-x-auto no-scrollbar max-w-full">
+                      {["All", "Published", "Drafts", "In Review", "Approved", "Rejected", "Archived"].map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setSelectedStatusFilter(tab)}
+                          className={`rounded px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${selectedStatusFilter === tab
+                            ? "bg-white text-zinc-950 shadow-2xs"
+                            : "text-zinc-550 hover:text-zinc-900"
+                            }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                      {/* Category Dropdown */}
+                      <select
+                        value={selectedCategoryFilter}
+                        onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                      >
+                        <option value="All Categories">All Categories</option>
+                        {categoriesList.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Sort Dropdown */}
+                      <select
+                        value={`${articleSort}:${articleSortDir}`}
+                        onChange={(e) => {
+                          const [field, dir] = e.target.value.split(":") as [typeof articleSort, typeof articleSortDir];
+                          setArticleSort(field);
+                          setArticleSortDir(dir);
+                        }}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                      >
+                        <option value="updated_at:desc">Last Updated ↓</option>
+                        <option value="updated_at:asc">Last Updated ↑</option>
+                        <option value="created_at:desc">Publish Date (Newest)</option>
+                        <option value="created_at:asc">Publish Date (Oldest)</option>
+                        <option value="views:desc">Most Views</option>
+                        <option value="views:asc">Fewest Views</option>
+                        <option value="title:asc">Title A → Z</option>
+                        <option value="title:desc">Title Z → A</option>
+                        <option value="category:asc">Category A → Z</option>
+                        <option value="status:asc">Status A → Z</option>
+                        <option value="helpfulRate:asc">Helpful Rate ↑ (worst first)</option>
+                        <option value="helpfulRate:desc">Helpful Rate ↓ (best first)</option>
+                      </select>
+
+                      {/* Helpful Rate Filter */}
+                      <select
+                        value={selectedHelpfulFilter}
+                        onChange={(e) => setSelectedHelpfulFilter(e.target.value)}
+                        className={`rounded-lg border bg-white px-3 py-1.5 text-xs font-bold focus:outline-hidden cursor-pointer ${selectedHelpfulFilter !== "All" ? "border-cyan-400 text-cyan-700" : "border-zinc-200 text-zinc-700"}`}
+                      >
+                        <option value="All">All Ratings</option>
+                        <option value="high">≥ 80% Helpful</option>
+                        <option value="medium">60–79% Helpful</option>
+                        <option value="low">&lt; 60% Helpful</option>
+                        <option value="no-ratings">No Ratings Yet</option>
+                      </select>
+
+                      {/* Search Bar Input */}
+                      <input
+                        type="text"
+                        placeholder="Search titles or IDs..."
+                        value={searchKeyword}
+                        onChange={(e) => setSearchKeyword(e.target.value)}
+                        className="rounded-lg border border-zinc-200 bg-white px-3.5 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 focus:border-zinc-950 focus:outline-hidden transition-all shadow-2xs w-48 sm:w-60"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Articles Table */}
+                  <div className="rounded-xl border border-zinc-100 bg-white shadow-2xs overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                        <thead>
+                          {(() => {
+                            const SortTh = ({ field, label, className }: { field: typeof articleSort; label: string; className?: string }) => (
+                              <th
+                                className={`p-4 cursor-pointer select-none hover:text-zinc-700 transition-colors ${articleSort === field ? "text-zinc-900" : ""} ${className || ""}`}
+                                onClick={() => toggleSort(field)}
+                              >
+                                <span className="inline-flex items-center gap-1">
+                                  {label}
+                                  {articleSort === field ? (articleSortDir === "asc" ? " ↑" : " ↓") : " ↕"}
+                                </span>
+                              </th>
+                            );
+                            return (
+                              <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider">
+                                <th className="p-4">ID</th>
+                                <SortTh field="title" label="Title" />
+                                <SortTh field="category" label="Category" />
+                                <th className="p-4">Lang</th>
+                                <SortTh field="status" label="Status" />
+                                <SortTh field="views" label="Views" />
+                                <SortTh field="helpfulRate" label="Helpful %" />
+                                <SortTh field="updated_at" label="Updated" />
+                                <th className="p-4 text-right">Actions</th>
+                              </tr>
+                            );
+                          })()}
+                        </thead>
+                        <tbody className="divide-y divide-zinc-50">
+                          {sortedFilteredArticles.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="p-8 text-center text-zinc-450 font-semibold">
+                                No articles found matching filters.
+                              </td>
+                            </tr>
+                          ) : (
+                            sortedFilteredArticles.map((art) => {
+                              const realViews = articleViewCounts[art.id] ?? null;
+
+                              // Format date nicely: Jun 23
+                              const dateObj = new Date(art.updated_at);
+                              const formattedDate = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+                              const rowBorder =
+                                art.status === "Published" ? "border-l-[3px] border-l-green-400"
+                                  : art.status === "Draft" ? "border-l-[3px] border-l-zinc-300"
+                                    : art.status === "Archived" ? "border-l-[3px] border-l-zinc-300"
+                                      : art.status === "Rejected" ? "border-l-[3px] border-l-red-400"
+                                        : art.status === "InReview" ? "border-l-[3px] border-l-blue-400"
+                                          : "border-l-[3px] border-l-amber-400"; // Approved
+
+                              const langBadge =
+                                art.language === "en" ? "bg-blue-50 text-blue-700 border-blue-100"
+                                  : art.language === "ar" ? "bg-orange-50 text-orange-700 border-orange-100"
+                                    : "bg-zinc-100 text-zinc-500 border-zinc-200";
+
+                              return (
+                                <tr key={art.id} className={`hover:bg-zinc-50 transition-colors ${rowBorder}`}>
+                                  <td className="p-4 font-mono text-[10px] text-zinc-400 font-semibold">{art.id.slice(0, 8)}</td>
+                                  <td className="p-4 font-extrabold text-zinc-950 text-left">
+                                    {art.title}
+                                  </td>
+                                  <td className="p-4">
+                                    <span className="rounded-md bg-violet-50 border border-violet-100 px-2.5 py-0.5 text-[9px] font-bold text-violet-600 uppercase">
+                                      {art.category?.name || "General"}
+                                    </span>
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase ${langBadge}`}>
+                                      {art.language}
+                                    </span>
+                                  </td>
+                                  <td className="p-4">
+                                    <span
+                                      className={`rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border ${art.status === "Published"
+                                        ? "bg-green-50 text-green-700 border-green-200"
+                                        : art.status === "Draft"
+                                          ? "bg-zinc-100 text-zinc-650 border-zinc-200"
+                                          : art.status === "Archived"
+                                            ? "bg-zinc-200 text-zinc-600 border-zinc-300"
+                                            : art.status === "Rejected"
+                                              ? "bg-red-50 text-red-700 border-red-200"
+                                              : art.status === "InReview"
+                                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                                : art.status === "Approved"
+                                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                  : "bg-zinc-100 text-zinc-650 border-zinc-200"
+                                        }`}
+                                    >
+                                      {art.status === "InReview" ? "IN REVIEW" : art.status === "Approved" ? "APPROVED" : art.status.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 font-mono font-bold text-zinc-600">
+                                    {realViews !== null ? realViews.toLocaleString() : <span className="text-zinc-300">—</span>}
+                                  </td>
+                                  <td className="p-4">
+                                    {art.helpfulRate !== null && art.helpfulRate !== undefined ? (
+                                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                        art.helpfulRate >= 80 ? "bg-green-50 text-green-700 border-green-200"
+                                        : art.helpfulRate >= 60 ? "bg-amber-50 text-amber-700 border-amber-200"
+                                        : "bg-red-50 text-red-600 border-red-200"
+                                      }`}>
+                                        {art.helpfulRate}%
+                                        <span className="text-[9px] font-medium opacity-70">({art.totalFeedback})</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-zinc-300 font-mono text-[11px]">—</span>
+                                    )}
+                                  </td>
+                                  <td className="p-4 text-zinc-500 font-medium">{formattedDate}</td>
+                                  <td className="p-4 text-right space-x-1.5 whitespace-nowrap">
+                                    <Link
+                                      href={`/articles/${art.id}`}
+                                      target="_blank"
+                                      className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs inline-block"
+                                    >
+                                      View
+                                    </Link>
+
+                                    {art.status === "Published" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveLinkManagerArticle(art)}
+                                        className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs"
+                                      >
+                                        Guest Link
+                                      </button>
+                                    )}
+
+                                    {(art.status === "InReview" || art.status === "Approved") && (
+                                      art.author_id === currentUserId ? (
+                                        <span
+                                          title="Separation of duties: you cannot approve your own article"
+                                          className="rounded border border-red-100 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-500 cursor-not-allowed select-none"
+                                        >
+                                          ⛔ Self-authored
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDirectStatusTransition(art.id, art.status === "InReview" ? "Approved" : "Published")}
+                                          disabled={transitioningArticleId === art.id}
+                                          className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-green-650 hover:bg-green-50 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {transitioningArticleId === art.id ? "…" : "Approve"}
+                                        </button>
+                                      )
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditor(art)}
+                                      className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs"
+                                    >
+                                      Edit
+                                    </button>
+
+                                    {art.status === "Archived" ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDirectStatusTransition(art.id, "Draft", "Restored from Archived to Draft")}
+                                        disabled={transitioningArticleId === art.id}
+                                        className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {transitioningArticleId === art.id ? "…" : "Restore"}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDirectStatusTransition(art.id, "Archived")}
+                                        disabled={transitioningArticleId === art.id}
+                                        className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-red-650 hover:bg-red-50 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {transitioningArticleId === art.id ? "…" : "Archive"}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Guest Link Modal Overlay from row action */}
+                  {activeLinkManagerArticle && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-xs">
+                      <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left">
+                        <div className="flex items-center justify-between border-b border-zinc-150 pb-2">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">
+                              Guest Shared Links: {activeLinkManagerArticle.title}
+                            </h4>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setGeneratingLink(true);
+                              try {
+                                const res = await fetch(`/api/v1/articles/${activeLinkManagerArticle.id}/guest-links`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ channel: "default" }),
+                                });
+                                if (res.ok) {
+                                  const newLink = await res.json();
+                                  setGuestLinks([newLink, ...guestLinks]);
+                                  toast("Guest link generated.", "success");
+                                } else {
+                                  toast("Failed to generate guest link.", "error");
+                                }
+                              } catch (e) {
+                                toast("Failed to generate guest link.", "error");
+                              } finally {
+                                setGeneratingLink(false);
+                              }
+                            }}
+                            disabled={generatingLink}
+                            className="rounded bg-zinc-950 hover:bg-zinc-800 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs"
+                          >
+                            {generatingLink ? "Generating..." : "Generate New Link"}
+                          </button>
+                        </div>
+
+                        <div className="max-h-60 overflow-y-auto space-y-2">
+                          {guestLinks.length === 0 ? (
+                            <p className="text-[10px] text-zinc-400 font-semibold italic p-4 text-center">No active guest links found.</p>
+                          ) : (
+                            guestLinks.map((link) => {
+                              const guestUrl = `${window.location.origin}/articles/${activeLinkManagerArticle.id}?token=${link.token}`;
+                              return (
+                                <div key={link.id} className="flex items-center justify-between gap-4 p-2 bg-zinc-50 border border-zinc-150 rounded-lg text-xs">
+                                  <div className="truncate flex-1">
+                                    <span className="text-[10px] font-mono text-zinc-600 select-all font-semibold block truncate">
+                                      {guestUrl}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {!link.revoked && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(guestUrl);
+                                          toast("Guest link copied to clipboard.", "success");
+                                        }}
+                                        className="rounded border border-zinc-200 bg-white px-2 py-0.5 text-[9px] font-bold text-zinc-650"
+                                      >
+                                        Copy
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`/api/v1/articles/${activeLinkManagerArticle.id}/guest-links`, {
+                                            method: "PUT",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ link_id: link.id, revoked: !link.revoked }),
+                                          });
+                                          if (res.ok) {
+                                            const updated = await res.json();
+                                            setGuestLinks(guestLinks.map((l) => (l.id === link.id ? updated : l)));
+                                            toast(link.revoked ? "Guest link restored." : "Guest link revoked.", "success");
+                                          } else {
+                                            toast("Failed to update guest link.", "error");
+                                          }
+                                        } catch (e) {
+                                          toast("Failed to update guest link.", "error");
+                                        }
+                                      }}
+                                      className={`rounded px-2 py-0.5 text-[9px] font-bold ${link.revoked ? "bg-zinc-950 text-white" : "border border-red-200 text-red-700"
+                                        }`}
+                                    >
+                                      {link.revoked ? "Restore" : "Revoke"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="flex justify-end pt-2 border-t border-zinc-150">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveLinkManagerArticle(null);
+                              setGuestLinks([]);
+                            }}
+                            className="rounded border border-zinc-200 bg-white px-4 py-1.5 text-xs font-bold text-zinc-650"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* EDITOR / CREATOR FORM VIEW */
+                <form onSubmit={handleSaveArticle} noValidate className="space-y-6">
+                  <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-2xs space-y-6">
+                    <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
+                      <h3 className="text-sm font-extrabold text-zinc-950">
+                        {isCreating ? "Create Support Article" : `Review & Edit: ${editingArticle?.title}`}
+                      </h3>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={closeEditor}
+                          className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-3.5 py-2 text-xs font-bold text-zinc-600 shadow-xs"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="rounded bg-zinc-950 hover:bg-zinc-800 px-4 py-2 text-xs font-bold text-white shadow-xs"
+                        >
+                          {saving ? "Saving..." : "Save Changes"}
+                        </button>
+                        {!isCreating && editingArticle && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteArticle(editingArticle.id)}
+                            disabled={deletingArticle}
+                            className="rounded bg-red-600 hover:bg-red-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {deletingArticle ? "Deleting…" : "Delete"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {(titleError || slugError || contentError || teamsError || reviewDueError) && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <div>
+                          <p className="text-[10px] font-bold text-red-700 uppercase tracking-wider mb-1.5">Missing required fields</p>
+                          <ul className="space-y-0.5">
+                            {titleError && <li className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-red-400 shrink-0" />Title</li>}
+                            {slugError && <li className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-red-400 shrink-0" />Slug</li>}
+                            {contentError && <li className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-red-400 shrink-0" />Default content (Customer View tab)</li>}
+                            {teamsError && <li className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-red-400 shrink-0" />Assign to Teams</li>}
+                            {reviewDueError && <li className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-red-400 shrink-0" />Review Due Date</li>}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rejection Feedback Amber Alert Box */}
+                    {!isCreating && editingArticle && (editingArticle.status === "Rejected" || editingArticle.status === "Draft") && fullArticleDetail?.status_history && (
+                      (() => {
+                        const rejection = fullArticleDetail.status_history.find((h: any) => h.to_status === "Rejected" && h.comment);
+                        if (rejection) {
+                          return (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 flex items-start gap-2.5 shadow-2xs">
+                              <span className="text-base">⚠️</span>
+                              <div className="space-y-1">
+                                <p className="font-bold">Rejection Feedback</p>
+                                <p className="italic font-semibold font-mono text-[11px] bg-white/60 p-2 rounded-md border border-amber-100">"{rejection.comment}"</p>
+                                <p className="text-[10px] text-amber-700/80">Rejected by <span className="font-bold">{rejection.actor?.name}</span> on {new Date(rejection.created_at).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
+
+                    {/* Governance Metadata Badge Bar / Info Box */}
+                    {!isCreating && editingArticle && (
+                      <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 space-y-3">
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-455">
+                          Governance Metadata
+                        </h4>
+                        {fullArticleDetail ? (
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
+                            <div>
+                              <span className="text-[10px] text-zinc-450 block font-medium">Written By</span>
+                              <span className="font-semibold text-zinc-800">{fullArticleDetail.author?.name || "Unknown"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-450 block font-medium">Approved By</span>
+                              <span className="font-semibold text-zinc-800">
+                                {fullArticleDetail.status_history?.find((h: any) => h.to_status === "Approved")?.actor?.name ||
+                                  (fullArticleDetail.status === "Published" ? fullArticleDetail.status_history?.find((h: any) => h.to_status === "Published")?.actor?.name : null) ||
+                                  "Pending Approval"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-450 block font-medium">Published By</span>
+                              <span className="font-semibold text-zinc-800">
+                                {fullArticleDetail.status_history?.find((h: any) => h.to_status === "Published")?.actor?.name || "Not Published"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-450 block font-medium">Created Date</span>
+                              <span className="font-semibold text-zinc-800">{new Date(fullArticleDetail.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-450 block font-medium">Published Date</span>
+                              <span className="font-semibold text-zinc-800">
+                                {fullArticleDetail.published_at ? new Date(fullArticleDetail.published_at).toLocaleDateString() : "Not Published"}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-zinc-455 animate-pulse">Loading governance metadata...</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Grid Inputs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                      <div className="space-y-2">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${titleError ? "text-red-600" : "text-zinc-550"}`}>Title <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => handleTitleChange(e.target.value)}
+                          className={`w-full rounded-lg border bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden ${titleError ? "border-red-400 bg-red-50 focus:border-red-500" : "border-zinc-200"}`}
+                          placeholder="e.g. SIM Card Setup"
+                        />
+                        {titleError && <p className="text-[10px] font-semibold text-red-600">Title is required</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${slugError ? "text-red-600" : "text-zinc-550"}`}>Slug <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={slug}
+                          onChange={(e) => { setSlug(e.target.value); if (e.target.value.trim()) setSlugError(false); }}
+                          className={`w-full rounded-lg border bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden ${slugError ? "border-red-400 bg-red-50 focus:border-red-500" : "border-zinc-200"}`}
+                          placeholder="sim-card-setup"
+                        />
+                        {slugError && <p className="text-[10px] font-semibold text-red-600">Slug is required</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Category</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingCategory(!isAddingCategory);
+                              setNewCategoryName("");
+                              setCategoryError("");
+                            }}
+                            className="text-[10px] text-zinc-950 font-bold hover:underline cursor-pointer focus:outline-hidden"
+                          >
+                            {isAddingCategory ? "Cancel" : "+ Add New"}
+                          </button>
+                        </div>
+                        {isAddingCategory ? (
+                          <div className="space-y-1">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                placeholder="New category name..."
+                                className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleCreateCategory}
+                                className="rounded-lg bg-zinc-950 hover:bg-zinc-850 px-3 py-2 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
+                              >
+                                Add
+                              </button>
+                            </div>
+                            {categoryError && (
+                              <p className="text-[10px] font-bold text-red-650 mt-1">{categoryError}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <select
+                            value={categoryId}
+                            onChange={(e) => setCategoryId(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                          >
+                            {categoriesList.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Language</label>
+                        <select
+                          value={language}
+                          onChange={(e) => setLanguage(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                        >
+                          <option value="en">English (EN)</option>
+                          <option value="ar">Arabic (AR)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Visibility</label>
+                        <select
+                          value={visibility}
+                          onChange={(e) => setVisibility(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                        >
+                          <option value="PUBLIC">Public — visible to customers</option>
+                          <option value="AGENTS">Agents only</option>
+                          <option value="ADMINS">Admins only</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2 relative">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${teamsError ? "text-red-600" : "text-zinc-550"}`}>Assign to Teams <span className="text-red-500">*</span></label>
+                        <button
+                          type="button"
+                          onClick={() => setIsTeamsDropdownOpen(!isTeamsDropdownOpen)}
+                          className={`flex items-center justify-between w-full rounded-lg border bg-white px-3 py-2 text-xs text-zinc-850 hover:bg-zinc-50 transition-colors text-left ${teamsError ? "border-red-400 bg-red-50" : "border-zinc-200"}`}
+                        >
+                          <span className="truncate">
+                            {selectedTeams.length === 0
+                              ? "Select Teams..."
+                              : teams
+                                .filter(t => selectedTeams.includes(t.id))
+                                .map(t => t.name)
+                                .join(", ")}
+                          </span>
+                          <svg className="h-4 w-4 text-zinc-400 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {isTeamsDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setIsTeamsDropdownOpen(false)} />
+                            <div className="absolute z-20 mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-left shadow-md max-h-40 overflow-y-auto space-y-1">
+                              {teams
+                                .filter((team) => {
+                                  if (currentUserRole === "Admin") {
+                                    return team.user_teams?.some((ut: any) => ut.user_id === currentUserId);
+                                  }
+                                  return true;
+                                })
+                                .map((team) => (
+                                  <label key={team.id} className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-zinc-700 hover:bg-zinc-50 p-2 rounded transition-colors">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedTeams.includes(team.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedTeams([...selectedTeams, team.id]);
+                                          setTeamsError(false);
+                                        } else {
+                                          setSelectedTeams(selectedTeams.filter(id => id !== team.id));
+                                        }
+                                      }}
+                                      className="accent-zinc-955"
+                                    />
+                                    <span className="truncate">{team.name}</span>
+                                  </label>
+                                ))}
+                            </div>
+                          </>
+                        )}
+                        {teamsError && <p className="text-[10px] font-semibold text-red-600">At least one team must be assigned</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${reviewDueError ? "text-red-600" : "text-zinc-550"}`}>Review Due Date <span className="text-red-500">*</span></label>
+                        <input
+                          type="date"
+                          value={reviewDue}
+                          onChange={(e) => { setReviewDue(e.target.value); if (e.target.value) setReviewDueError(false); }}
+                          className={`w-full rounded-lg border bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden ${reviewDueError ? "border-red-400 bg-red-50 focus:border-red-500" : "border-zinc-200"}`}
+                        />
+                        {reviewDueError && <p className="text-[10px] font-semibold text-red-600">Review due date is required</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Tags</label>
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={tagInput}
+                            onChange={(e) => setTagInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const trimmed = tagInput.trim();
+                                if (trimmed && !tags.includes(trimmed)) {
+                                  setTags([...tags, trimmed]);
+                                }
+                                setTagInput("");
+                              }
+                            }}
+                            placeholder="Type tag and press Enter..."
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                          />
+                          {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-zinc-200"
+                                >
+                                  {tag}
+                                  <button
+                                    type="button"
+                                    onClick={() => setTags(tags.filter((t) => t !== tag))}
+                                    className="text-zinc-450 hover:text-zinc-650 font-bold ml-0.5 cursor-pointer focus:outline-hidden"
+                                  >
+                                    &times;
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Workflow Route Selector */}
+                    <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-2xs space-y-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">Approval Workflow Route</h4>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Approval Workflow</label>
+                        <select
+                          value={selectedWorkflowRouteId}
+                          onChange={(e) => setSelectedWorkflowRouteId(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                          disabled={!!(!isCreating && editingArticle && editingArticle.status !== "Draft" && editingArticle.status !== "Archived")}
+                          title={!isCreating && editingArticle && editingArticle.status !== "Draft" && editingArticle.status !== "Archived" ? "Workflow cannot be changed once review has started." : ""}
+                        >
+                          <option value="">Default Direct Workflow</option>
+                          {workflowRoutes.map((route) => (
+                            <option key={route.id} value={route.id}>
+                              {route.name} ({route.steps?.length || 0} steps)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Workflow status transition panel (only in edit mode) */}
+                    {(isCreating || editingArticle) && (
+                      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 space-y-4">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">
+                          Workflow Governance Operations
+                        </h4>
+
+                        {/* Separation of Duties Banner Alert */}
+                        {!isCreating && editingArticle && editingArticle.author_id === currentUserId && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800 flex items-start gap-2.5">
+                            <span className="text-base">⚠️</span>
+                            <div>
+                              <p className="font-bold">Separation of Duties Restriction</p>
+                              <p className="mt-0.5 font-medium">You are the author of this article. The server enforces that a different Administrator must approve or publish this guide.</p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 items-end">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                              Current Status: <span className="text-zinc-800 font-extrabold uppercase">{isCreating ? "DRAFT" : editingArticle?.status}</span>
+                            </label>
+                            <select
+                              value={transitionStatus}
+                              onChange={(e) => setTransitionStatus(e.target.value)}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                            >
+                              <option value="">-- Change Status --</option>
+                              {getAllowedStatusTransitions(isCreating ? "Draft" : editingArticle?.status || "Draft").map((t) => {
+                                const isSelfAuthorRestrict = !isCreating && !!editingArticle && (t.status === "Approved" || t.status === "Published") && editingArticle.author_id === currentUserId;
+                                return (
+                                  <option key={t.status} value={t.status} disabled={isSelfAuthorRestrict}>
+                                    {t.label} {isSelfAuthorRestrict ? "(Restricted: Author)" : ""}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          <div className="space-y-2 sm:col-span-2">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                              Transition Notes / Rejection Comment
+                            </label>
+                            <input
+                              type="text"
+                              value={transitionComment}
+                              onChange={(e) => setTransitionComment(e.target.value)}
+                              placeholder="e.g. Approved copy, fixed typo, rejected because..."
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Guest Links Manager Panel (only in edit mode for Published articles) */}
+                    {!isCreating && editingArticle && editingArticle.status === "Published" && (
+                      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">
+                              Guest Link Access Tokens
+                            </h4>
+                            <p className="text-[10px] text-zinc-450 font-medium mt-0.5">Generate secure URLs to share this article with guest users.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleGenerateGuestLink}
+                            disabled={generatingLink}
+                            className="rounded border border-zinc-250 bg-white hover:bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-700 shadow-2xs"
+                          >
+                            {generatingLink ? "Generating..." : "Generate Guest Link"}
+                          </button>
+                        </div>
+
+                        {guestLinks.length === 0 ? (
+                          <p className="text-[10px] text-zinc-400 font-semibold italic">No guest links generated for this article yet.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {guestLinks.map((link) => {
+                              const guestUrl = typeof window !== "undefined" ? `${window.location.origin}/articles/${editingArticle.id}?token=${link.token}` : "";
+                              return (
+                                <div key={link.id} className="flex items-center justify-between gap-4 p-2.5 bg-white border border-zinc-150 rounded-lg text-xs">
+                                  <div className="space-y-0.5 truncate flex-1">
+                                    <span className="text-[10px] font-mono text-zinc-600 select-all font-semibold block truncate">
+                                      {guestUrl}
+                                    </span>
+                                    <span className="text-[9px] text-zinc-400 font-medium">
+                                      Created {new Date(link.created_at).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {link.revoked ? (
+                                      <span className="rounded bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 text-[9px] font-bold">
+                                        Revoked
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(guestUrl);
+                                          toast("Guest link copied to clipboard.", "success");
+                                        }}
+                                        className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-0.5 text-[9px] font-bold text-zinc-650"
+                                      >
+                                        Copy Link
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRevokeGuestLink(link.id, !link.revoked)}
+                                      className={`rounded px-2 py-0.5 text-[9px] font-bold transition-colors ${link.revoked
+                                        ? "bg-zinc-950 text-white hover:bg-zinc-800"
+                                        : "border border-red-200 text-red-700 hover:bg-red-50"
+                                        }`}
+                                    >
+                                      {link.revoked ? "Restore" : "Revoke"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Content variants editor (tabs) */}
+                    <div className="space-y-4">
+                      {/* Variant Selection Tabs */}
+                      <div className="flex border-b border-zinc-200 pb-2 mb-4 gap-2 overflow-x-auto text-left">
+                        {[
+                          { id: "default", label: "Default Variant", icon: "🌐" },
+                          { id: "agent", label: "Agent Desk", icon: "👥" },
+                          { id: "chatbot", label: "Chatbot", icon: "🤖" },
+                          { id: "whatsapp", label: "WhatsApp", icon: "💬" }
+                        ].map((tab) => {
+                          const isActive = variantTab === tab.id;
+                          const isEmpty = isVariantEmpty(tab.id);
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setVariantTab(tab.id as any)}
+                              className={`rounded-lg py-2 px-4 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${isActive
+                                ? "text-white shadow-xs"
+                                : "text-zinc-500 bg-white border-zinc-200 hover:text-zinc-950 hover:bg-zinc-50"
+                                }`}
+                              style={isActive ? { backgroundColor: brandingColor, borderColor: brandingColor } : {}}
+                            >
+                              <span>{tab.icon}</span>
+                              <span>{tab.label}</span>
+                              {tab.id !== "default" && isEmpty && (
+                                <span className="text-[8px] uppercase tracking-wider text-amber-600 font-extrabold ml-1">(Fallback)</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Fallback Warning Alerts */}
+                      {variantTab !== "default" && isVariantEmpty(variantTab) && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-850 flex items-center gap-2 mb-4 text-left">
+                          <span>⚠️</span>
+                          Notice: No variant exists for the {variantTab.toUpperCase()} channel. The system will fall back to displaying the Default Variant.
+                        </div>
+                      )}
+
+                      {/* Variant Specific Fields */}
+                      {variantTab === "default" && (
+                        <div className="space-y-1.5 text-left mb-4">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input
+                            type="text"
+                            value={vDefaultShort}
+                            onChange={(e) => setVDefaultShort(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            placeholder="Quick summary snippet..."
+                          />
+                          <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Used for general search previews and fallback channels.</p>
+                        </div>
+                      )}
+
+                      {variantTab === "agent" && (
+                        <div className="space-y-4 mb-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5 text-left">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                              <input
+                                type="text"
+                                value={vAgentShort}
+                                onChange={(e) => setVAgentShort(e.target.value)}
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                                placeholder="Agent specific summary..."
+                              />
+                              <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Shown directly to agents in their active console.</p>
+                            </div>
+                            <div className="space-y-1.5 text-left">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Copy-ready Macro Response</label>
+                              <input
+                                type="text"
+                                value={vAgentMacro}
+                                onChange={(e) => setVAgentMacro(e.target.value)}
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                                placeholder="Text copied to clipboard in one click by agents..."
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {variantTab === "chatbot" && (
+                        <div className="space-y-1.5 text-left mb-4">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input
+                            type="text"
+                            value={vChatbotShort}
+                            onChange={(e) => setVChatbotShort(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            placeholder="Chatbot specific summary..."
+                          />
+                          <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Used by the AI bot to answer user search queries.</p>
+                        </div>
+                      )}
+
+                      {variantTab === "whatsapp" && (
+                        <div className="space-y-1.5 text-left mb-4">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input
+                            type="text"
+                            value={vWhatsappShort}
+                            onChange={(e) => setVWhatsappShort(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            placeholder="WhatsApp specific summary..."
+                          />
+                          <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Optimized text for WhatsApp channel delivery.</p>
+                        </div>
+                      )}
+
+                      {/* Redesigned Premium Editor Container */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block text-left">Detailed Steps</label>
+                        <div className="rounded-xl border border-zinc-200 bg-white shadow-2xs overflow-hidden">
+                          {/* Floating Formatting Toolbar */}
+                          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-50/50 p-2.5 border-b border-zinc-200 text-left">
+                            {/* Undo / Redo */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand('undo')}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-zinc-200 shadow-2xs"
+                              title="Undo"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand('redo')}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-zinc-200 shadow-2xs"
+                              title="Redo"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2m18-22l-6 6m6-6l-6-6" />
+                              </svg>
+                            </button>
+
+                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+
+                            {/* Text Style Dropdown */}
+                            <select
+                              onChange={(e) => executeCommand("formatBlock", e.target.value === "paragraph" ? "<p>" : `<${e.target.value}>`)}
+                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-bold text-zinc-655 cursor-pointer focus:outline-hidden"
+                              defaultValue="paragraph"
+                            >
+                              <option value="paragraph">Normal text</option>
+                              <option value="h1">Heading 1</option>
+                              <option value="h2">Heading 2</option>
+                              <option value="h3">Heading 3</option>
+                            </select>
+
+                            {/* Font Size Dropdown */}
+                            <select
+                              onChange={(e) => executeCommand("fontSize", e.target.value)}
+                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-bold text-zinc-655 cursor-pointer focus:outline-hidden"
+                              defaultValue="16"
+                            >
+                              <option value="12">12</option>
+                              <option value="14">14</option>
+                              <option value="16">16</option>
+                              <option value="18">18</option>
+                              <option value="20">20</option>
+                            </select>
+
+                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+
+                            {/* Bold, Italic, Underline, Strikethrough */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("bold")}
+                              className="w-8 h-8 flex items-center justify-center text-xs font-black text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Bold"
+                            >
+                              B
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("italic")}
+                              className="w-8 h-8 flex items-center justify-center text-xs italic text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Italic"
+                            >
+                              I
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("underline")}
+                              className="w-8 h-8 flex items-center justify-center text-xs underline text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Underline"
+                            >
+                              U
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("strikeThrough")}
+                              className="w-8 h-8 flex items-center justify-center text-xs line-through text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Strikethrough"
+                            >
+                              S
+                            </button>
+
+                            {/* Text Color / Highlight */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                const color = prompt("Enter text color (e.g. red, #ef4444):", "#ef4444");
+                                if (color) executeCommand("foreColor", color);
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-xs text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs gap-0.5 font-bold"
+                              title="Text Color"
+                            >
+                              <span>T</span>
+                              <span className="text-[10px] text-red-500 font-bold">●</span>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                const color = prompt("Enter highlight color (e.g. yellow, #fef08a):", "#fef08a");
+                                if (color) executeCommand("backColor", color);
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-xs text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Highlight Color"
+                            >
+                              ✏️
+                            </button>
+
+                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+
+                            {/* Alignments */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("justifyLeft")}
+                              className="p-1.5 text-zinc-550 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                              title="Align Left"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h10M4 18h14" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("justifyCenter")}
+                              className="p-1.5 text-zinc-550 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                              title="Align Center"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M7 12h10M5 18h14" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("justifyRight")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Align Right"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M10 12h10M6 18h14" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("justifyFull")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Justify"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                              </svg>
+                            </button>
+
+                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+
+                            {/* Lists & Indents */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("insertUnorderedList")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Bullet List"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("insertOrderedList")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Numbered List"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h13M7 12h13M7 16h13M3 8h.01M3 12h.01M3 16h.01" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("outdent")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Decrease Indent"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l-7-7 7-7m5 14l-7-7 7-7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("indent")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Increase Indent"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M6 5l7 7-7 7" />
+                              </svg>
+                            </button>
+
+                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+
+                            {/* Link, Image, Table, HR, Clear */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("createLink")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Insert Link"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => document.getElementById("image-file-input")?.click()}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Upload Image Guide"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("insertTable")}
+                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              title="Insert Table"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("insertHorizontalRule")}
+                              className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Insert Horizontal Rule"
+                            >
+                              —
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => executeCommand("clearFormatting")}
+                              className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              title="Clear Formatting"
+                            >
+                              Tx
+                            </button>
+                          </div>
+
+                          {/* Content WYSIWYG Editors */}
+                          <div className="relative text-left">
+                            <style>{`
+                          .wysiwyg-editor {
+                            min-height: 350px;
+                            outline: none;
+                            position: relative;
+                            padding: 16px;
+                            line-height: 1.625;
+                            font-size: 0.875rem;
+                            color: #18181b;
+                            text-align: left;
+                          }
+                          .wysiwyg-editor:empty:before {
+                            content: attr(data-placeholder);
+                            color: #a1a1aa;
+                            cursor: text;
+                            position: absolute;
+                            left: 16px;
+                            top: 16px;
+                          }
+                          .wysiwyg-editor table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin: 12px 0;
+                          }
+                          .wysiwyg-editor table td, .wysiwyg-editor table th {
+                            border: 1px solid #e4e4e7;
+                            padding: 8px;
+                          }
+                          .wysiwyg-editor ul {
+                            list-style-type: disc;
+                            padding-left: 20px;
+                            margin: 8px 0;
+                          }
+                          .wysiwyg-editor ol {
+                            list-style-type: decimal;
+                            padding-left: 20px;
+                            margin: 8px 0;
+                          }
+                          .wysiwyg-editor blockquote {
+                            border-left: 4px solid #e4e4e7;
+                            padding-left: 16px;
+                            margin: 12px 0;
+                            color: #71717a;
+                            font-style: italic;
+                          }
+                          .wysiwyg-editor h1 {
+                            font-size: 1.5rem;
+                            font-weight: 850;
+                            margin-top: 16px;
+                            margin-bottom: 8px;
+                            color: #09090b;
+                          }
+                          .wysiwyg-editor h2 {
+                            font-size: 1.25rem;
+                            font-weight: 800;
+                            margin-top: 14px;
+                            margin-bottom: 6px;
+                            color: #09090b;
+                          }
+                          .wysiwyg-editor h3 {
+                            font-size: 1.1rem;
+                            font-weight: 750;
+                            margin-top: 12px;
+                            margin-bottom: 4px;
+                            color: #09090b;
+                          }
+                        `}</style>
+
+                            {/* Editor Default */}
+                            <div
+                              ref={editorRefDefault}
+                              contentEditable={true}
+                              onInput={(e) => { setVDefaultDetailed(e.currentTarget.innerHTML); if (e.currentTarget.innerText.trim()) setContentError(false); }}
+                              className={`wysiwyg-editor bg-white ${variantTab === "default" ? "block" : "hidden"}`}
+                              data-placeholder="Start writing..."
+                              suppressContentEditableWarning={true}
+                            />
+
+                            {/* Editor Agent */}
+                            <div
+                              ref={editorRefAgent}
+                              contentEditable={true}
+                              onInput={(e) => setVAgentDetailed(e.currentTarget.innerHTML)}
+                              className={`wysiwyg-editor bg-white ${variantTab === "agent" ? "block" : "hidden"}`}
+                              data-placeholder="Start writing..."
+                              suppressContentEditableWarning={true}
+                            />
+
+                            {/* Editor Chatbot */}
+                            <div
+                              ref={editorRefChatbot}
+                              contentEditable={true}
+                              onInput={(e) => setVChatbotDetailed(e.currentTarget.innerHTML)}
+                              className={`wysiwyg-editor bg-white ${variantTab === "chatbot" ? "block" : "hidden"}`}
+                              data-placeholder="Start writing..."
+                              suppressContentEditableWarning={true}
+                            />
+
+                            {/* Editor WhatsApp */}
+                            <div
+                              ref={editorRefWhatsapp}
+                              contentEditable={true}
+                              onInput={(e) => setVWhatsappDetailed(e.currentTarget.innerHTML)}
+                              className={`wysiwyg-editor bg-white ${variantTab === "whatsapp" ? "block" : "hidden"}`}
+                              data-placeholder="Start writing..."
+                              suppressContentEditableWarning={true}
+                            />
+
+                            {/* Content error — only relevant on the Default tab */}
+                            {contentError && variantTab === "default" && (
+                              <div className="absolute bottom-12 left-4 right-4 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                                Default content is required
+                              </div>
+                            )}
+
+                            {/* Word Counter */}
+                            <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-zinc-100 text-[10px] font-bold text-zinc-450 shadow-3xs select-none">
+                              {(() => {
+                                const activeVal =
+                                  variantTab === "default" ? vDefaultDetailed :
+                                    variantTab === "agent" ? vAgentDetailed :
+                                      variantTab === "chatbot" ? vChatbotDetailed :
+                                        vWhatsappDetailed;
+                                const textClean = activeVal.replace(/<[^>]*>/g, " ").trim();
+                                const wordCount = textClean ? textClean.split(/\s+/).length : 0;
+                                return `${wordCount} words`;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {variantTab === "agent" && (
+                        <div className="space-y-2 pt-4 border-t border-zinc-150 text-left">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Interactive Troubleshooting Flow JSON</label>
+                            <button
+                              type="button"
+                              onClick={() => setVAgentFlow(JSON.stringify(SAMPLE_TROUBLESHOOTING_FLOW, null, 2))}
+                              className="rounded border border-zinc-250 bg-white px-2 py-1 text-[9px] font-bold text-zinc-700 hover:text-zinc-955 shadow-2xs cursor-pointer"
+                            >
+                              Load Template Flow
+                            </button>
+                          </div>
+                          <textarea
+                            rows={6}
+                            value={vAgentFlow}
+                            onChange={(e) => setVAgentFlow(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-850 focus:outline-hidden font-mono shadow-inner"
+                            placeholder='{ "start_node": "...", "nodes": { ... } }'
+                          />
+                          {vAgentFlow && (
+                            <div className="border border-zinc-200 rounded-lg p-4 bg-zinc-50 mt-2">
+                              <span className="text-[10px] text-zinc-450 font-bold uppercase block mb-3">Live Flow Tester Preview:</span>
+                              {(() => {
+                                try {
+                                  const parsed = JSON.parse(vAgentFlow);
+                                  return <TroubleshootingPlayer flow={parsed} />;
+                                } catch (err) {
+                                  return <span className="text-[10px] text-red-500 font-semibold font-mono">Invalid JSON syntax. Fix structure to preview flow player.</span>;
+                                }
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Picture Guide Direct Upload Card */}
+                      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left">
+                        <div>
+                          <h4 className="text-xs font-bold text-zinc-900">Direct Picture Guide Upload</h4>
+                          <p className="text-[10px] text-zinc-450 font-medium mt-0.5">Upload image guides (PNG/JPG, max 5MB) to render inline in steps.</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="file"
+                            accept="image/png, image/jpeg, image/jpg"
+                            onChange={handleImageUpload}
+                            disabled={uploadingImage}
+                            className="hidden"
+                            id="image-file-input"
+                          />
+                          <label
+                            htmlFor="image-file-input"
+                            className="rounded border border-zinc-250 bg-white hover:bg-zinc-50 px-3 py-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-950 cursor-pointer shadow-2xs transition-all disabled:opacity-50"
+                          >
+                            {uploadingImage ? "Uploading image..." : "Upload Image Guide"}
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* WORKFLOWS TAB */}
+          {currentTab === "workflows" && (
+            <div className="space-y-6">
+              {/* Tab Selector */}
+              {currentUserRole === "SuperAdmin" && (
+                <div className="flex border-b border-zinc-200 mb-2 overflow-x-auto no-scrollbar max-w-full whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => setWorkflowSubTab("queue")}
+                    className={`px-5 py-2.5 text-xs font-bold border-b-2 transition-all shrink-0 ${workflowSubTab === "queue"
+                        ? "border-zinc-900 text-zinc-900"
+                        : "border-transparent text-zinc-450 hover:text-zinc-700"
+                      }`}
+                  >
+                    Review Queue
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkflowSubTab("builder");
+                      setEditingWorkflow(null);
+                    }}
+                    className={`px-5 py-2.5 text-xs font-bold border-b-2 transition-all shrink-0 ${workflowSubTab === "builder"
+                        ? "border-zinc-900 text-zinc-900"
+                        : "border-transparent text-zinc-450 hover:text-zinc-700"
+                      }`}
+                  >
+                    Custom Workflows Builder
+                  </button>
+                </div>
+              )}
+
+              {workflowSubTab === "queue" || currentUserRole !== "SuperAdmin" ? (
+                <>
+                  <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                    <div className="border-b border-zinc-100 bg-zinc-50/50 px-6 py-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-700">Article Workflows Queue</h3>
+                        <p className="text-[11px] text-zinc-400 font-medium mt-0.5">Review and approve articles moving through the editorial pipeline.</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                          IN REVIEW: {articles.filter(a => a.status === "InReview").length}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          APPROVED: {articles.filter(a => a.status === "Approved").length}
+                        </span>
+                      </div>
+                    </div>
+
+                    {articles.filter(a => a.status === "InReview" || a.status === "Approved").length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <div className="h-12 w-12 rounded-2xl bg-zinc-100 flex items-center justify-center mb-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                          </svg>
+                        </div>
+                        <p className="text-sm font-bold text-zinc-500">All clear!</p>
+                        <p className="text-xs text-zinc-400 font-medium mt-1">No articles are waiting for review or approval.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                          <thead>
+                            <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-500 uppercase text-[10px] font-bold">
+                              <th className="px-5 py-3.5">Article Title</th>
+                              <th className="px-5 py-3.5">Category</th>
+                              <th className="px-5 py-3.5">Author</th>
+                              <th className="px-5 py-3.5">Stage</th>
+                              <th className="px-5 py-3.5">Next Stage</th>
+                              <th className="px-5 py-3.5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {articles
+                              .filter(a => a.status === "InReview" || a.status === "Approved")
+                              .map(art => {
+                                const isOwnArticle = art.author_id === currentUserId;
+                                const nextStatus = art.status === "InReview" ? "Approved" : "Published";
+                                const nextLabel = art.status === "InReview" ? "Approve" : "Publish";
+                                return (
+                                  <tr key={art.id} className="hover:bg-zinc-50/60 transition-colors">
+                                    <td className="px-5 py-4">
+                                      <div className="font-bold text-zinc-900 leading-tight">{art.title}</div>
+                                      <div className="text-[10px] text-zinc-400 font-mono mt-0.5">/{art.slug}</div>
+                                    </td>
+                                    <td className="px-5 py-4 text-zinc-500 font-medium">{art.category?.name || "—"}</td>
+                                    <td className="px-5 py-4">
+                                      <div className="text-zinc-700 font-semibold">{art.author?.name || "Unknown"}</div>
+                                      <div className="text-[10px] text-zinc-400 font-mono">{art.author?.email}</div>
+                                    </td>
+                                    <td className="px-5 py-4">
+                                      {art.status === "InReview" ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                          In Review
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                          Approved
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-5 py-4">
+                                      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-[10px] font-bold text-zinc-600">
+                                        ➔ {nextStatus}
+                                      </span>
+                                    </td>
+                                    <td className="px-5 py-4 text-right space-x-2 whitespace-nowrap">
+                                      <Link
+                                        href={`/articles/${art.id}`}
+                                        target="_blank"
+                                        className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 shadow-2xs"
+                                      >
+                                        View
+                                      </Link>
+                                      {isOwnArticle ? (
+                                        <span className="inline-flex items-center gap-1 rounded border border-red-100 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-500 cursor-not-allowed" title="Separation of duties: You are the author and cannot approve your own article">
+                                          ⛔ Cannot Approve
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDirectStatusTransition(art.id, nextStatus)}
+                                          disabled={transitioningArticleId === art.id}
+                                          className="inline-flex items-center gap-1 rounded border border-green-200 bg-green-50 hover:bg-green-100 px-2.5 py-1.5 text-[10px] font-bold text-green-700 shadow-2xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {transitioningArticleId === art.id ? "Processing…" : `✓ ${nextLabel}`}
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => { setRejectionModalArticleId(art.id); setRejectionModalComment(""); }}
+                                        className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 text-[10px] font-bold text-red-600 shadow-2xs transition-colors"
+                                      >
+                                        ✕ Reject
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Workflow Pipeline Legend */}
+                  <div className="rounded-xl border border-zinc-200 bg-white px-6 py-5 shadow-sm">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-4">Editorial Pipeline</h4>
+                    <div className="flex items-center gap-0 overflow-x-auto no-scrollbar max-w-full pb-2 select-none">
+                      {[
+                        { label: "Draft", color: "bg-zinc-200 text-zinc-600", active: false },
+                        { label: "In Review", color: "bg-blue-100 text-blue-700", active: true },
+                        { label: "Approved", color: "bg-amber-100 text-amber-700", active: true },
+                        { label: "Published", color: "bg-green-100 text-green-700", active: false },
+                        { label: "Archived", color: "bg-zinc-200 text-zinc-500", active: false },
+                      ].map((stage, i, arr) => (
+                        <div key={stage.label} className="flex items-center shrink-0">
+                          <div className={`rounded-full px-3 py-1.5 text-[10px] font-bold border shrink-0 ${stage.active ? "border-current ring-2 ring-offset-1 ring-current/20" : "border-transparent"
+                            } ${stage.color}`}>
+                            {stage.active && <span className="mr-1">👁</span>}{stage.label}
+                          </div>
+                          {i < arr.length - 1 && (
+                            <span className="mx-2 text-zinc-300 font-bold text-sm shrink-0">→</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 font-medium mt-3">Highlighted stages are currently visible in this Workflows queue. Approving an article automatically advances it to the next stage.</p>
+                  </div>
+                </>
+              ) : (
+                /* ─── CUSTOM WORKFLOWS BUILDER ─── */
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-extrabold text-zinc-900">Custom Approval Workflows</h3>
+                      <p className="text-xs text-zinc-500 mt-0.5">Define sequential multi-step approval routes that articles must pass through before publication.</p>
+                    </div>
+                    {!editingWorkflow && (
+                      <button
+                        type="button"
+                        onClick={startNewWorkflow}
+                        className="inline-flex items-center gap-2 rounded-lg border border-zinc-900 bg-zinc-950 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800 shadow-sm transition-colors"
+                      >
+                        <span>+</span> New Workflow
+                      </button>
+                    )}
+                  </div>
+
+                  {!editingWorkflow && (
+                    workflowRoutes.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 flex flex-col items-center justify-center py-14 text-center">
+                        <div className="h-12 w-12 rounded-2xl bg-zinc-200 flex items-center justify-center mb-3">
+                          <span className="text-xl">🔀</span>
+                        </div>
+                        <p className="text-sm font-bold text-zinc-500">No custom workflows yet</p>
+                        <p className="text-xs text-zinc-400 font-medium mt-1">Click &ldquo;New Workflow&rdquo; to define a sequential approval route.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {workflowRoutes.map((route: any) => (
+                          <div key={route.id} className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                            <div className="flex items-start justify-between px-5 py-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-zinc-900 text-sm">{route.name}</div>
+                                {route.description && (
+                                  <div className="text-xs text-zinc-500 mt-0.5">{route.description}</div>
+                                )}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                                  {(route.steps || []).map((step: any, idx: number) => (
+                                    <div key={step.id || idx} className="flex items-center gap-1">
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+                                        <span className="font-mono text-[9px] opacity-60">{idx + 1}.</span>
+                                        {step.name}
+                                        {step.role_restriction && (
+                                          <span className="ml-1 opacity-60">· {step.role_restriction}</span>
+                                        )}
+                                      </span>
+                                      {idx < (route.steps || []).length - 1 && (
+                                        <span className="text-zinc-300 text-xs">→</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 ml-4 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditWorkflow(route)}
+                                  className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-700 shadow-2xs transition-colors"
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteWorkflow(route.id)}
+                                  className="rounded border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1.5 text-[10px] font-bold text-red-600 shadow-2xs transition-colors"
+                                >
+                                  🗑 Delete
+                                </button>
+                              </div>
+                            </div>
+                            <div className="border-t border-zinc-100 bg-zinc-50/60 px-5 py-2 text-[10px] text-zinc-400 font-medium">
+                              {(route.steps || []).length} step{(route.steps || []).length !== 1 ? "s" : ""} · {articles.filter((a: any) => a.workflow_route_id === route.id).length} article{articles.filter((a: any) => a.workflow_route_id === route.id).length !== 1 ? "s" : ""} using this route
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+
+                  {editingWorkflow && (
+                    <div className="rounded-xl border border-zinc-200 bg-white shadow-md overflow-hidden">
+                      <div className="border-b border-zinc-100 bg-gradient-to-r from-zinc-50 to-white px-6 py-4 flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-700">
+                            {editingWorkflow.id === "new" ? "Create New Workflow" : `Editing: ${editingWorkflow.name}`}
+                          </h4>
+                          <p className="text-[11px] text-zinc-400 mt-0.5">Define the sequential approval steps for this route.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingWorkflow(null)}
+                          className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-600 shadow-2xs"
+                        >
+                          ✕ Cancel
+                        </button>
+                      </div>
+
+                      <div className="px-6 py-5 space-y-5">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Workflow Name *</label>
+                            <input
+                              type="text"
+                              value={newWorkflowName}
+                              onChange={e => setNewWorkflowName(e.target.value)}
+                              placeholder="e.g. Legal & Compliance Review"
+                              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Description</label>
+                            <input
+                              type="text"
+                              value={newWorkflowDesc}
+                              onChange={e => setNewWorkflowDesc(e.target.value)}
+                              placeholder="Optional — describe when to use this workflow"
+                              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Approval Steps (Sequential)</label>
+                            <button
+                              type="button"
+                              onClick={() => setNewWorkflowSteps([...newWorkflowSteps, { name: "", role_restriction: "Admin", team_id: "", user_id: "" }])}
+                              className="inline-flex items-center gap-1 rounded border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 text-[10px] font-bold text-indigo-700 transition-colors"
+                            >
+                              + Add Step
+                            </button>
+                          </div>
+
+                          {newWorkflowSteps.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-center">
+                              <p className="text-xs text-zinc-400 font-semibold">No steps yet — click &ldquo;Add Step&rdquo; to begin.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {newWorkflowSteps.map((step, idx) => (
+                                <div key={idx} className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-900 text-white text-[10px] font-extrabold shrink-0">{idx + 1}</span>
+                                      <span className="text-xs font-bold text-zinc-700">Step {idx + 1}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      {idx > 0 && (
+                                        <button type="button" title="Move up" onClick={() => { const u = [...newWorkflowSteps];[u[idx - 1], u[idx]] = [u[idx], u[idx - 1]]; setNewWorkflowSteps(u); }} className="rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 shadow-2xs">↑</button>
+                                      )}
+                                      {idx < newWorkflowSteps.length - 1 && (
+                                        <button type="button" title="Move down" onClick={() => { const u = [...newWorkflowSteps];[u[idx], u[idx + 1]] = [u[idx + 1], u[idx]]; setNewWorkflowSteps(u); }} className="rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 shadow-2xs">↓</button>
+                                      )}
+                                      <button type="button" onClick={() => setNewWorkflowSteps(newWorkflowSteps.filter((_, i) => i !== idx))} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-100 shadow-2xs">✕ Remove</button>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                                    <div className="lg:col-span-2">
+                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Step Name *</label>
+                                      <input type="text" value={step.name} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], name: e.target.value }; setNewWorkflowSteps(u); }} placeholder="e.g. Technical Review" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition" />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Role Required</label>
+                                      <select value={step.role_restriction} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], role_restriction: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                        <option value="Admin">Admin</option>
+                                        <option value="SuperAdmin">Super Admin</option>
+                                        <option value="Any">Any Role</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Team</label>
+                                      <select value={step.team_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], team_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                        <option value="">Any Team</option>
+                                        {teams.map((t: any) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+                                      </select>
+                                    </div>
+                                    <div className="lg:col-span-2">
+                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Specific User</label>
+                                      <select value={step.user_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], user_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                        <option value="">Any User (matching role/team)</option>
+                                        {users.map((u: User) => (<option key={u.id} value={u.id}>{u.name} · {u.email}</option>))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {newWorkflowSteps.length > 0 && (
+                          <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-5 py-4">
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-indigo-500 mb-3">Workflow Preview</p>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-600">Draft</span>
+                              <span className="text-zinc-300 text-xs">→</span>
+                              {newWorkflowSteps.map((step, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-100 px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+                                    {idx + 1}. {step.name || `Step ${idx + 1}`}
+                                    {step.role_restriction && step.role_restriction !== "Any" && (
+                                      <span className="opacity-60 ml-0.5">({step.role_restriction})</span>
+                                    )}
+                                  </span>
+                                  <span className="text-zinc-300 text-xs">→</span>
+                                </div>
+                              ))}
+                              <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-[10px] font-bold text-green-700">Published</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-100">
+                          <button type="button" onClick={() => setEditingWorkflow(null)} className="rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 px-5 py-2 text-xs font-bold text-zinc-600 shadow-2xs transition-colors">Cancel</button>
+                          <button type="button" onClick={handleSaveWorkflow} className="rounded-lg border border-zinc-900 bg-zinc-950 hover:bg-zinc-800 px-6 py-2 text-xs font-bold text-white shadow-sm transition-colors">
+                            {editingWorkflow.id === "new" ? "Create Workflow" : "Save Changes"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-5 py-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 mb-1">How Custom Workflows Work</p>
+                    <ul className="text-xs text-amber-700/80 font-medium space-y-1 list-disc list-inside">
+                      <li>Assign a workflow to an article in the Article Editor before submitting for review.</li>
+                      <li>Articles must pass through each approval step in order before being published.</li>
+                      <li>Each step validates the approver&rsquo;s role, team membership, and (optionally) identity.</li>
+                      <li>Separation of duties: the article author cannot approve their own work at any step.</li>
+                      <li>If an article is rejected, the approver must provide feedback for the author.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* KNOWLEDGE GAPS QUEUE VIEW */}
+          {currentTab === "gaps" && (
+            <div className="space-y-6">
+              {/* Status & Date range selectors */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-zinc-200 shadow-2xs">
+                <div className="flex flex-nowrap overflow-x-auto no-scrollbar gap-2 max-w-full pb-1">
+                  {["ALL", "NEW", "IN_PROGRESS", "RESOLVED"].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setGapStatusFilter(st)}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs whitespace-nowrap shrink-0 ${gapStatusFilter === st
+                        ? "bg-zinc-950 text-white border-zinc-950"
+                        : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+                        }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Sort toggle */}
+                  <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setGapSortOrder("newest")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all ${gapSortOrder === "newest" ? "bg-zinc-950 text-white" : "text-zinc-500 hover:bg-zinc-100"}`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m3 8 4-4 4 4" /><path d="M7 4v16" /><path d="M11 12h4" /><path d="M11 16h7" /><path d="M11 20h10" />
+                      </svg>
+                      Newest
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGapSortOrder("oldest")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all ${gapSortOrder === "oldest" ? "bg-zinc-950 text-white" : "text-zinc-500 hover:bg-zinc-100"}`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m3 16 4 4 4-4" /><path d="M7 20V4" /><path d="M11 4h10" /><path d="M11 8h7" /><path d="M11 12h4" />
+                      </svg>
+                      Oldest
+                    </button>
+                  </div>
+
+                  {/* Date range */}
+                  <div className="flex items-center gap-2 text-xs font-semibold text-zinc-650">
+                    <span>From:</span>
+                    <input
+                      type="date"
+                      value={gapStartDate}
+                      onChange={(e) => setGapStartDate(e.target.value)}
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden bg-white"
+                    />
+                    <span>To:</span>
+                    <input
+                      type="date"
+                      value={gapEndDate}
+                      onChange={(e) => setGapEndDate(e.target.value)}
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden bg-white"
+                    />
+                    {(gapStartDate || gapEndDate) && (
+                      <button
+                        onClick={() => { setGapStartDate(""); setGapEndDate(""); }}
+                        className="text-red-500 hover:underline ml-1"
+                      >Clear</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-zinc-100 bg-white shadow-2xs overflow-hidden">
+                <div className="border-b border-zinc-100 bg-zinc-50/40 p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-455">Captured Search Miss Gaps</h3>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1050px] w-full text-xs text-zinc-800 text-left border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-bold">
+                        <th className="p-4 w-52">Search Query / Flag</th>
+                        <th className="p-4 w-28">Type</th>
+                        <th className="p-4 w-44">Feedback / Comment</th>
+                        <th className="p-4 w-12">Hits</th>
+                        <th className="p-4 w-24">Status</th>
+                        <th className="p-4 w-36">Reported By</th>
+                        <th className="p-4 w-32">Claimed By</th>
+                        <th className="p-4 w-36 whitespace-nowrap">Date/Time</th>
+                        <th className="p-4 text-right w-44 whitespace-nowrap">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-50">
+                      {gaps.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="p-8 text-center text-zinc-400 font-semibold">
+                            No knowledge gaps found in this queue.
+                          </td>
+                        </tr>
+                      ) : (
+                        [...gaps]
+                          .sort((a, b) => {
+                            const ta = new Date(a.created_at).getTime();
+                            const tb = new Date(b.created_at).getTime();
+                            return gapSortOrder === "newest" ? tb - ta : ta - tb;
+                          })
+                          .map((g) => (
+                            <tr key={g.id} className="hover:bg-zinc-50 transition-colors align-top">
+                              <td className="p-4 w-52">
+                                <p className="font-bold text-zinc-955 italic truncate max-w-[180px]" title={g.query_text}>"{g.query_text}"</p>
+                                {g.flagged_article && (
+                                  <p className="text-[10px] text-red-600 font-semibold mt-0.5 truncate max-w-[180px]" title={g.flagged_article.title}>
+                                    📄 Flagged: {g.flagged_article.title}
+                                  </p>
+                                )}
+                              </td>
+
+                              <td className="p-4 w-28">
+                                {g.source === "search" ? (
+                                  <span className="rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">Search Query</span>
+                                ) : g.source === "article_flag" ? (
+                                  <span className="rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border bg-red-50 text-red-700 border-red-200 whitespace-nowrap">Article Flag</span>
+                                ) : g.source === "customer" ? (
+                                  <span className="rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border bg-zinc-50 text-zinc-500 border-zinc-200 whitespace-nowrap">Customer</span>
+                                ) : (
+                                  <span className="rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border bg-amber-50 text-amber-700 border-amber-200 whitespace-nowrap">Knowledge Gap</span>
+                                )}
+                              </td>
+
+                              <td className="p-4 w-44">
+                                {g.comment ? (
+                                  <p className="text-[10px] text-zinc-700 font-medium italic leading-relaxed line-clamp-2 max-w-[160px]">"{g.comment}"</p>
+                                ) : (
+                                  <span className="text-[10px] text-zinc-300">—</span>
+                                )}
+                              </td>
+                              <td className="p-4 w-12 font-mono font-bold text-zinc-600">{g.occurrences}x</td>
+                              <td className="p-4">
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase border ${g.status === "RESOLVED"
+                                    ? "bg-green-50 text-green-700 border-green-200"
+                                    : g.status === "NEW"
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                    }`}
+                                >
+                                  {g.status}
+                                </span>
+                              </td>
+                              <td className="p-4 w-36 text-zinc-500 font-medium">
+                                <p className="truncate max-w-[120px]" title={g.reporter?.name || "Customer / Guest"}>{g.reporter?.name || "Customer / Guest"}</p>
+                                {g.reporter?.email && <p className="text-[9px] text-zinc-400 truncate max-w-[120px]">{g.reporter.email}</p>}
+                              </td>
+                              <td className="p-4 w-32 text-zinc-500 font-medium truncate max-w-[110px]">{g.claimer?.name || "Unassigned"}</td>
+                              <td className="p-4 w-36 text-zinc-450 font-mono text-[10px] whitespace-nowrap">
+                                {new Date(g.created_at).toLocaleString()}
+                              </td>
+                              <td className="p-4 w-44 text-right">
+                                <div className="flex flex-nowrap gap-2 justify-end items-center">
+                                  {g.status === "NEW" && (
+                                    <>
+                                      <button
+                                        onClick={() => handleClaimGap(g.id)}
+                                        disabled={claimingGapId === g.id}
+                                        className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {claimingGapId === g.id ? "Claiming…" : "Claim Gap"}
+                                      </button>
+                                      <button
+                                        onClick={() => handleCreateArticleFromGap(g)}
+                                        className="rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs whitespace-nowrap"
+                                      >
+                                        Create Article
+                                      </button>
+                                    </>
+                                  )}
+                                  {g.status === "IN_PROGRESS" && (
+                                    <>
+                                      <button
+                                        onClick={() => setResolvingGap(g)}
+                                        className="rounded bg-zinc-950 hover:bg-zinc-800 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs whitespace-nowrap"
+                                      >
+                                        Resolve Gap
+                                      </button>
+                                      <button
+                                        onClick={() => handleCreateArticleFromGap(g)}
+                                        className="rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs whitespace-nowrap"
+                                      >
+                                        Create Article
+                                      </button>
+                                    </>
+                                  )}
+                                  {g.status === "RESOLVED" && (
+                                    <div className="flex items-center justify-end gap-2 text-xs">
+                                      {g.resolving_article_id ? (
+                                        <Link
+                                          href={`/articles/${g.resolving_article_id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 hover:text-green-900 hover:underline truncate max-w-40 transition-colors"
+                                        >
+                                          {g.resolving_article?.title || "View Article"}
+                                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                                          </svg>
+                                        </Link>
+                                      ) : (
+                                        <span className="text-[10px] text-zinc-400 font-medium">No article linked</span>
+                                      )}
+                                      <button
+                                        onClick={() => handleUnresolveGap(g.id)}
+                                        disabled={unresolvingGapId === g.id}
+                                        className="rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700 shadow-2xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {unresolvingGapId === g.id ? "Rolling back…" : "Rollback"}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AUDIT LOGS VIEW */}
+          {currentTab === "audit" && (() => {
+            // Derive unique dropdown options from loaded logs
+            const uniqueActions = Array.from(new Set(auditLogs.map(l => l.action))).sort();
+            const uniqueTargetTypes = Array.from(new Set(auditLogs.map(l => l.target_type))).sort();
+
+            // Apply all active filters
+            const filteredLogs = auditLogs.filter(log => {
+              if (auditFilterActor) {
+                const q = auditFilterActor.toLowerCase();
+                const nameMatch = log.actor?.name?.toLowerCase().includes(q);
+                const emailMatch = log.actor?.email?.toLowerCase().includes(q);
+                if (!nameMatch && !emailMatch) return false;
+              }
+              if (auditFilterAction && log.action !== auditFilterAction) return false;
+              if (auditFilterTargetType && log.target_type !== auditFilterTargetType) return false;
+              if (auditFilterLabel && !log.target_label.toLowerCase().includes(auditFilterLabel.toLowerCase())) return false;
+              if (auditFilterDateFrom) {
+                const from = new Date(auditFilterDateFrom);
+                if (new Date(log.created_at) < from) return false;
+              }
+              if (auditFilterDateTo) {
+                const to = new Date(auditFilterDateTo);
+                to.setHours(23, 59, 59, 999);
+                if (new Date(log.created_at) > to) return false;
+              }
+              return true;
+            });
+
+            const hasActiveFilters = auditFilterActor || auditFilterAction || auditFilterTargetType || auditFilterLabel || auditFilterDateFrom || auditFilterDateTo;
+
+            return (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-zinc-200 bg-white shadow-2xs overflow-hidden">
+
+                  {/* Header */}
+                  <div className="border-b border-zinc-200 bg-zinc-50/50 p-4 flex justify-between items-start gap-4">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-455">System Audit Logs</h3>
+                      <p className="text-[10px] text-zinc-400 font-medium mt-0.5">
+                        {hasActiveFilters ? `${filteredLogs.length} of ${auditLogs.length} entries` : `${auditLogs.length} log entries`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (filteredLogs.length === 0) return;
+                          downloadCSV(
+                            `audit-log-${new Date().toISOString().split("T")[0]}.csv`,
+                            filteredLogs.map(l => [
+                              new Date(l.created_at).toLocaleString(),
+                              l.actor?.name || "System",
+                              l.actor?.email || "",
+                              l.action,
+                              l.target_type,
+                              l.target_label,
+                            ]),
+                            ["Timestamp", "Actor Name", "Actor Email", "Action", "Target Type", "Target Label"]
+                          );
+                        }}
+                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-650"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Export CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={fetchAuditLogs}
+                        disabled={loadingAuditLogs}
+                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 disabled:opacity-60 disabled:cursor-not-allowed px-2.5 py-1 text-[10px] font-bold text-zinc-650 transition-colors"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loadingAuditLogs ? "animate-spin" : ""}>
+                          <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        {loadingAuditLogs ? "Refreshing…" : "Refresh"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Bar */}
+                  <div className="border-b border-zinc-100 bg-zinc-50/30 px-4 py-3">
+                    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
+                      {/* Date From */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">From Date</label>
+                        <input
+                          type="date"
+                          value={auditFilterDateFrom}
+                          onChange={e => setAuditFilterDateFrom(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors"
+                        />
+                      </div>
+                      {/* Date To */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">To Date</label>
+                        <input
+                          type="date"
+                          value={auditFilterDateTo}
+                          onChange={e => setAuditFilterDateTo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors"
+                        />
+                      </div>
+                      {/* Actor */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Actor</label>
+                        <div className="relative">
+                          <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-350 pointer-events-none" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Name or email..."
+                            value={auditFilterActor}
+                            onChange={e => setAuditFilterActor(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white pl-6 pr-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors placeholder:text-zinc-350"
+                          />
+                        </div>
+                      </div>
+                      {/* Action */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Action</label>
+                        <select
+                          value={auditFilterAction}
+                          onChange={e => setAuditFilterAction(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors appearance-none cursor-pointer"
+                        >
+                          <option value="">All actions</option>
+                          {uniqueActions.map(a => (
+                            <option key={a} value={a}>{a}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Target Type */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Type</label>
+                        <select
+                          value={auditFilterTargetType}
+                          onChange={e => setAuditFilterTargetType(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors appearance-none cursor-pointer"
+                        >
+                          <option value="">All types</option>
+                          {uniqueTargetTypes.map(t => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Target Label */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Label</label>
+                        <div className="relative">
+                          <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-350 pointer-events-none" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search label..."
+                            value={auditFilterLabel}
+                            onChange={e => setAuditFilterLabel(e.target.value)}
+                            className="w-full rounded-lg border border-zinc-200 bg-white pl-6 pr-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors placeholder:text-zinc-350"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {/* Clear Filters */}
+                    {hasActiveFilters && (
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuditFilterActor("");
+                            setAuditFilterAction("");
+                            setAuditFilterTargetType("");
+                            setAuditFilterLabel("");
+                            setAuditFilterDateFrom("");
+                            setAuditFilterDateTo("");
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 transition-colors"
+                        >
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                          Clear all filters
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                      <thead>
+                        <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-500 uppercase text-[10px] font-bold">
+                          <th className="p-4">Timestamp</th>
+                          <th className="p-4">Actor</th>
+                          <th className="p-4">Action</th>
+                          <th className="p-4">Target Type</th>
+                          <th className="p-4">Target Label</th>
+                          <th className="p-4">Rollback</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {filteredLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-8 text-center text-zinc-400 font-semibold">
+                              {hasActiveFilters ? "No logs match the current filters." : "No audit logs recorded."}
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredLogs.map((log) => {
+                            const canRollback = log.target_type === "Article" && log.before && Object.keys(log.before).length > 0;
+                            const a = log.action?.toUpperCase() || "";
+                            const actionBadge =
+                              a.includes("CREATE") || a.includes("PUBLISH") || a.includes("APPROVE")
+                                ? "bg-green-50 text-green-700 border-green-100"
+                                : a.includes("DELETE") || a.includes("ARCHIVE")
+                                  ? "bg-red-50 text-red-600 border-red-100"
+                                  : a.includes("UPDATE") || a.includes("EDIT")
+                                    ? "bg-blue-50 text-blue-700 border-blue-100"
+                                    : a.includes("GAP") || a.includes("FLAG")
+                                      ? "bg-amber-50 text-amber-700 border-amber-100"
+                                      : a.includes("ROLLBACK") || a.includes("RESTORE")
+                                        ? "bg-orange-50 text-orange-700 border-orange-100"
+                                        : a.includes("VIEW") || a.includes("SEARCH")
+                                          ? "bg-zinc-100 text-zinc-500 border-zinc-200"
+                                          : "bg-zinc-100 text-zinc-600 border-zinc-200";
+                            const typeBadge =
+                              log.target_type === "Article"
+                                ? "bg-blue-50 text-blue-700 border-blue-100"
+                                : log.target_type === "KnowledgeGap"
+                                  ? "bg-amber-50 text-amber-700 border-amber-100"
+                                  : log.target_type === "User"
+                                    ? "bg-violet-50 text-violet-700 border-violet-100"
+                                    : "bg-zinc-100 text-zinc-500 border-zinc-200";
+                            return (
+                              <tr key={log.id} className="hover:bg-zinc-50/50">
+                                <td className="p-4 text-zinc-500 font-mono whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</td>
+                                <td className="p-4 font-bold text-zinc-900">
+                                  {log.actor
+                                    ? <>{log.actor.name} <span className="text-[10px] text-zinc-400 font-normal">({log.actor.email})</span></>
+                                    : <span className="text-zinc-500 font-semibold">Customer / Guest</span>
+                                  }
+                                </td>
+                                <td className="p-4">
+                                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${actionBadge}`}>
+                                    {log.action}
+                                  </span>
+                                </td>
+                                <td className="p-4">
+                                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${typeBadge}`}>
+                                    {log.target_type}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-zinc-700 font-medium text-[11px] max-w-xs truncate">{log.target_label}</td>
+                                <td className="p-4">
+                                  {canRollback ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!confirm(`Restore article to its state before "${log.action}"?`)) return;
+                                        const res = await fetch(`/api/v1/articles/${log.target_id}`, {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ ...log.before, _rollback_from_audit: log.id }),
+                                        });
+                                        if (res.ok) {
+                                          toast("Article restored. Reloading page…", "success");
+                                          window.location.reload();
+                                        } else {
+                                          const err = await res.json().catch(() => ({}));
+                                          toast(`Rollback failed: ${err.error || res.status}`, "error");
+                                        }
+                                      }}
+                                      className="rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700 shadow-2xs transition-colors whitespace-nowrap"
+                                    >
+                                      ↩ Restore
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-zinc-300 font-medium">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* GLOSSARY TAB */}
+          {currentTab === "glossary" && (() => {
+            const sections = [
+              {
+                category: "Articles & Content",
+                badgeClass: "bg-blue-50 border-blue-100 text-blue-700",
+                barClass: "bg-blue-500",
+                borderClass: "border-l-blue-300",
+                items: [
+                  { term: "Draft", def: "An article being written and not yet submitted for review. Only the author and admins can see it." },
+                  { term: "In Review", def: "Submitted and awaiting approval. The author cannot edit it at this stage." },
+                  { term: "Approved", def: "Passed review but not yet live. A publish step is still required before agents can find it." },
+                  { term: "Published", def: "Live in the Knowledge Base and searchable by agents. The only status visible in KB search results." },
+                  { term: "Archived", def: "Removed from the live KB. Preserved for audit purposes and can be restored to Draft at any time." },
+                  { term: "Rejected", def: "Returned to the author with required feedback. The author revises and resubmits." },
+                  { term: "Separation of Duties", def: "An article's author cannot approve or publish their own work. Independent review is enforced automatically." },
+                  { term: "Visibility", def: "Controls who can find the article. Public = all agents; Private = specified team only; Internal = admin reference." },
+                  { term: "Version History", def: "Every saved change is tracked. Admins can compare versions and roll back to any prior state from the Audit Log." },
+                ],
+              },
+              {
+                category: "Analytics & Metrics",
+                badgeClass: "bg-violet-50 border-violet-100 text-violet-700",
+                barClass: "bg-violet-500",
+                borderClass: "border-l-violet-300",
+                items: [
+                  { term: "Helpful Rate", def: "Percentage of ratings marked 'Helpful'. Formula: (Helpful ÷ Total rated) × 100. Low rates signal content that needs improvement." },
+                  { term: "Confidence / Match %", def: "AI match score (0–100%) measuring how closely an article answers a search query. Above 70% is a strong match." },
+                  { term: "Avg. Confidence", def: "Mean AI match score across all searches. A low average means searches frequently fail — the KB is missing content." },
+                  { term: "Searches Today", def: "KB searches performed on the current calendar day." },
+                  { term: "vs Yesterday", def: "Percentage change in today's search volume compared to yesterday. Shows demand trends (+) or drops (−)." },
+                  { term: "pp (percentage points)", def: "Absolute difference between two percentages. Helpful rate rising from 60% to 65% is +5pp, not +8.3%." },
+                  { term: "Total Views", def: "Times articles have been opened by agents or customers since tracking began." },
+                ],
+              },
+              {
+                category: "Knowledge Gaps",
+                badgeClass: "bg-amber-50 border-amber-100 text-amber-700",
+                barClass: "bg-amber-500",
+                borderClass: "border-l-amber-300",
+                items: [
+                  { term: "Knowledge Gap", def: "A search that returned no good result — flagged automatically or by an agent. Signals missing KB content that needs a new article." },
+                  { term: "Gap Queue", def: "The list of all captured gaps awaiting review. Admins can claim, resolve, or dismiss each entry." },
+                  { term: "Occurrences / Hits", def: "How many times the same gap was triggered. Higher hits = higher priority for new content." },
+                  { term: "Claimed By", def: "The admin who has taken ownership of resolving a gap, typically by creating or improving an article." },
+                  { term: "Resolved Gap", def: "A gap marked done after content was added or updated to cover the missing topic." },
+                  { term: "Seeded Gap", def: "A gap that pre-populated when navigating here from an alert or link — appears pre-filled so you can act on it immediately." },
+                ],
+              },
+              {
+                category: "Workflows & Audit",
+                badgeClass: "bg-green-50 border-green-100 text-green-700",
+                barClass: "bg-green-500",
+                borderClass: "border-l-green-300",
+                items: [
+                  { term: "Workflow Route", def: "A custom approval chain defining who must sign off on an article. Each step can target a role, team, or specific user." },
+                  { term: "Workflow Step", def: "A single approval stage within a route. Steps run in sequence — articles cannot skip ahead." },
+                  { term: "Rejection Feedback", def: "A mandatory comment required when sending an article back to Draft. Tells the author exactly what to fix." },
+                  { term: "Audit Log", def: "A tamper-proof record of every action: who did what, to which article, and when. Used for compliance and accountability." },
+                  { term: "Rollback", def: "Restoring an article to a previous version via the Audit Log. Useful when an incorrect change was published." },
+                ],
+              },
+            ];
+            const allTerms = sections.flatMap(s => s.items.map(i => ({ ...i, category: s.category, badgeClass: s.badgeClass, barClass: s.barClass })));
+            const cats = sections.map(s => s.category);
+            const filteredSections = sections
+              .map(s => ({
+                ...s,
+                matchedItems: s.items.filter(item =>
+                  !glossarySearch ||
+                  item.term.toLowerCase().includes(glossarySearch.toLowerCase()) ||
+                  item.def.toLowerCase().includes(glossarySearch.toLowerCase())
+                ),
+              }))
+              .filter(s =>
+                (glossaryCategory === "All" || s.category === glossaryCategory) &&
+                s.matchedItems.length > 0
+              );
+            const totalFiltered = filteredSections.reduce((sum, s) => sum + s.matchedItems.length, 0);
+            return (
+              <div className="space-y-5">
+                {/* Toolbar */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-xs text-zinc-500">Definitions for every term, metric, and feature in this workspace.</p>
+                    <span className="inline-flex items-center rounded-lg bg-zinc-50 border border-zinc-200 px-2.5 py-1 text-[10px] font-bold text-zinc-600 flex-shrink-0">
+                      {allTerms.length} terms
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+                    <input type="text" placeholder="Search terms or definitions…" value={glossarySearch} onChange={e => setGlossarySearch(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white pl-9 pr-10 py-2 text-sm text-zinc-800 placeholder-zinc-400 focus:border-zinc-400 focus:outline-none transition-colors" />
+                    {glossarySearch && (
+                      <button type="button" onClick={() => setGlossarySearch("")}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 text-lg font-bold leading-none">×</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["All", ...cats].map(cat => (
+                      <button key={cat} type="button" onClick={() => setGlossaryCategory(cat)}
+                        className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors border ${glossaryCategory === cat ? "bg-zinc-950 text-white border-zinc-950" : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-900"}`}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Count + clear */}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-zinc-400">
+                    Showing <span className="font-semibold text-zinc-600">{totalFiltered}</span> of {allTerms.length} terms
+                    {glossaryCategory !== "All" && <> in <span className="font-semibold text-zinc-600">{glossaryCategory}</span></>}
+                    {glossarySearch && <> matching <span className="font-semibold text-zinc-600">&ldquo;{glossarySearch}&rdquo;</span></>}
+                  </p>
+                  {(glossarySearch || glossaryCategory !== "All") && (
+                    <button type="button" onClick={() => { setGlossarySearch(""); setGlossaryCategory("All"); }}
+                      className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-700 transition-colors">Clear</button>
+                  )}
+                </div>
+                {/* Section tables */}
+                {filteredSections.length === 0 ? (
+                  <div className="rounded-xl border border-zinc-100 bg-white py-14 text-center">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 text-zinc-300"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+                    <p className="text-sm font-semibold text-zinc-500">No terms match your search.</p>
+                    <p className="text-xs text-zinc-400 mt-1">Try a different keyword or clear the filters.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredSections.map(section => (
+                      <div key={section.category} className={`rounded-xl border border-zinc-100 bg-white shadow-sm overflow-hidden flex flex-col border-l-[3px] ${section.borderClass}`}>
+                        <div className={`flex items-center gap-2.5 px-4 py-3 border-b flex-shrink-0 ${section.badgeClass}`}>
+                          <span className={`h-2 w-2 rounded-full flex-shrink-0 ${section.barClass}`} />
+                          <span className="text-xs font-bold">{section.category}</span>
+                          <span className="ml-auto text-[10px] font-semibold text-zinc-400 tabular-nums">{section.matchedItems.length}</span>
+                        </div>
+                        <div className="divide-y divide-zinc-50 flex-1">
+                          {section.matchedItems.map(item => (
+                            <div key={item.term} className="px-4 py-3 flex gap-4 hover:bg-zinc-50/60 transition-colors">
+                              <div className="w-36 flex-shrink-0 pt-0.5">
+                                <span className="text-[11px] font-bold text-zinc-900 leading-snug">{item.term}</span>
+                              </div>
+                              <p className="text-[11px] text-zinc-500 leading-relaxed">{item.def}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {currentTab === "dashboard" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                {/* Audience channel toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Analytics:</span>
+                  <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg">
+                    {(["all", "customer", "agent"] as const).map((ch) => (
+                      <button
+                        key={ch}
+                        type="button"
+                        onClick={() => {
+                          setAnalyticsChannel(ch);
+                          fetchAnalytics(ch);
+                        }}
+                        className={`rounded px-3 py-1.5 text-xs font-bold transition-all ${analyticsChannel === ch ? "bg-white text-zinc-950 shadow-xs" : "text-zinc-500 hover:text-zinc-900"}`}
+                      >
+                        {ch === "all" ? "Total" : ch === "customer" ? "Customer" : "Agent"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchAnalytics()}
+                  disabled={loadingAnalytics}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-xs font-bold text-zinc-700 shadow-xs transition-all disabled:opacity-50"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loadingAnalytics ? "animate-spin" : ""}>
+                    <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  {loadingAnalytics ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+              {loadingAnalytics && !analyticsData ? (
+                <div className="text-center py-12 text-zinc-450 font-semibold animate-pulse">
+                  Loading dashboard metrics...
+                </div>
+              ) : !analyticsData ? (
+                <div className="text-center py-12 text-zinc-400 italic">
+                  No dashboard data available.
+                </div>
+              ) : (
+                <>
+                  {/* KPI Row */}
+                  {(() => {
+                    const ad = analyticsData;
+                    type KpiCard = {
+                      label: string;
+                      value: string;
+                      delta: string;
+                      deltaUp: boolean | null;
+                      deltaUpBad?: boolean;
+                      accentFrom: string;
+                      accentTo: string;
+                      icon: React.ReactNode;
+                      actionLabel: string;
+                      onAction: () => void;
+                    };
+                    const cards: KpiCard[] = [
+                      {
+                        label: "Total Articles",
+                        value: (ad?.totalArticles ?? articles.length).toLocaleString(),
+                        delta: ad?.articlesThisWeek != null ? `${ad.articlesThisWeek > 0 ? "+" : ""}${ad.articlesThisWeek} this week` : "Live from DB",
+                        deltaUp: ad?.articlesThisWeek != null ? ad.articlesThisWeek >= 0 : true,
+                        accentFrom: "#7c3aed",
+                        accentTo: "#a78bfa",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                          </svg>
+                        ),
+                        actionLabel: "Manage Articles",
+                        onAction: () => { setActiveTab("articles"); closeEditor(); },
+                      },
+                      {
+                        label: "Searches Today",
+                        value: (ad?.todaySearches ?? 0).toLocaleString(),
+                        delta: ad?.searchVsYesterday != null
+                          ? `${ad.searchVsYesterday > 0 ? "+" : ""}${ad.searchVsYesterday}% vs yesterday`
+                          : "vs yesterday",
+                        deltaUp: ad?.searchVsYesterday != null ? ad.searchVsYesterday >= 0 : null,
+                        accentFrom: "#059669",
+                        accentTo: "#34d399",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                          </svg>
+                        ),
+                        actionLabel: "View Trends",
+                        onAction: () => setActiveTab("analytics"),
+                      },
+                      {
+                        label: "Helpful Rate",
+                        value: ad?.helpfulRate != null ? `${(ad.helpfulRateThisMonth ?? ad.helpfulRate).toFixed(1)}%` : "—",
+                        delta: ad?.helpfulRateDelta != null
+                          ? `${ad.helpfulRateDelta > 0 ? "+" : ""}${ad.helpfulRateDelta}pp this month`
+                          : "Based on feedback",
+                        deltaUp: ad?.helpfulRateDelta != null ? ad.helpfulRateDelta >= 0 : true,
+                        accentFrom: "#0891b2",
+                        accentTo: "#22d3ee",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
+                            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+                          </svg>
+                        ),
+                        actionLabel: "Fix Unhelpful Articles",
+                        onAction: () => {
+                          setActiveTab("articles");
+                          setSelectedStatusFilter("Published");
+                          setSelectedHelpfulFilter("All");
+                          setArticleSort("helpfulRate");
+                          setArticleSortDir("asc");
+                          closeEditor();
+                        },
+                      },
+                      {
+                        label: "Knowledge Gaps",
+                        value: (ad?.totalGaps ?? 0).toLocaleString(),
+                        delta: ad?.gapsThisWeek != null ? `+${ad.gapsThisWeek} reported this week` : "Live from DB",
+                        deltaUp: ad?.gapsThisWeek != null ? true : null,
+                        deltaUpBad: true,
+                        accentFrom: "#dc2626",
+                        accentTo: "#f87171",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 9v4" /><path d="M12 17h.01" />
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                          </svg>
+                        ),
+                        actionLabel: "Review Gaps Queue",
+                        onAction: () => setActiveTab("gaps"),
+                      },
+                    ];
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                        {cards.map((card) => (
+                          <div
+                            key={card.label}
+                            className="group relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] hover:border-zinc-300 transition-all text-left overflow-hidden flex flex-col justify-between h-[130px] cursor-pointer"
+                            onClick={card.onAction}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => e.key === "Enter" && card.onAction()}
+                          >
+                            {/* Gradient accent bar at bottom */}
+                            <div
+                              className="absolute bottom-0 left-0 right-0 h-[3px]"
+                              style={{ background: `linear-gradient(90deg, ${card.accentFrom}, ${card.accentTo})` }}
+                            />
+                            {/* Icon + label */}
+                            <div className="flex items-start justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">{card.label}</span>
+                              <span style={{ color: card.accentFrom }}>{card.icon}</span>
+                            </div>
+                            {/* Value */}
+                            <div className="text-[2rem] font-extrabold text-zinc-950 leading-none tabular-nums mt-1">{card.value}</div>
+                            {/* Delta + action link */}
+                            <div className="flex items-center justify-between gap-2 mt-1">
+                              {(() => {
+                                const isGood = card.deltaUp === null ? null : (card.deltaUpBad ? !card.deltaUp : card.deltaUp);
+                                return (
+                                  <div className={`flex items-center gap-1 text-[11px] font-bold ${isGood === true ? "text-green-600" : isGood === false ? "text-red-500" : "text-zinc-400"}`}>
+                                    {card.deltaUp === true && <span>▲</span>}
+                                    {card.deltaUp === false && <span>▼</span>}
+                                    {card.delta}
+                                  </div>
+                                );
+                              })()}
+                              <span className="text-[10px] font-bold text-zinc-400 group-hover:text-zinc-700 transition-colors whitespace-nowrap shrink-0">
+                                {card.actionLabel} →
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Highlights Row */}
+                  {(() => {
+                    const topHelpful = analyticsData?.topHelpful;
+                    const mostViewed = analyticsData?.mostViewed;
+                    const needsAttention = analyticsData?.needsAttention;
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Top Helpful */}
+                        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-md text-left border-b-2 border-b-zinc-400 flex flex-col justify-between min-h-[140px]">
+                          <div className="flex justify-between items-start gap-4">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">Top Helpful</span>
+                            {topHelpful && (
+                              <span className="bg-zinc-100 border border-zinc-200 text-zinc-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {topHelpful.helpfulPct.toFixed(0)}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="my-3">
+                            <h4 className="text-sm font-bold text-zinc-900 truncate" title={topHelpful?.title || "No data"}>
+                              {topHelpful?.title || "No helpful feedback logged yet"}
+                            </h4>
+                          </div>
+                          <div className="text-[11px] text-zinc-500 font-semibold">
+                            {topHelpful ? (
+                              `${topHelpful.views.toLocaleString()} views · ${topHelpful.helpfulCount} helpful votes`
+                            ) : (
+                              "No feedback views or votes logged"
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Most Viewed */}
+                        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-md text-left border-b-2 border-b-zinc-400 flex flex-col justify-between min-h-[140px]">
+                          <div className="flex justify-between items-start gap-4">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">Most Viewed</span>
+                            {mostViewed && (
+                              <span className="bg-zinc-100 border border-zinc-200 text-zinc-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {mostViewed.views.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <div className="my-3">
+                            <h4 className="text-sm font-bold text-zinc-900 truncate" title={mostViewed?.title || "No data"}>
+                              {mostViewed?.title || "No articles found"}
+                            </h4>
+                          </div>
+                          <div className="text-[11px] text-zinc-500 font-semibold">
+                            {mostViewed ? (
+                              `${mostViewed.views.toLocaleString()} views · ${mostViewed.helpfulPct.toFixed(0)}% helpful rate`
+                            ) : (
+                              "No views recorded yet"
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Needs Attention */}
+                        <div className="rounded-xl border border-red-100 bg-white p-5 shadow-md text-left border-b-2 border-b-red-400 flex flex-col justify-between min-h-[140px]">
+                          <div className="flex justify-between items-start gap-4">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-red-600">Needs Attention</span>
+                            {needsAttention && (
+                              <span className="bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {needsAttention.helpfulPct.toFixed(0)}% helpful
+                              </span>
+                            )}
+                          </div>
+                          <div className="my-2">
+                            <h4 className="text-sm font-bold text-zinc-900 truncate" title={needsAttention?.title || "No data"}>
+                              {needsAttention ? needsAttention.title : "All articles performing well!"}
+                            </h4>
+                            {needsAttention && (
+                              <p className="text-[10px] text-zinc-500 mt-0.5">
+                                {needsAttention.views.toLocaleString()} views · {needsAttention.unhelpfulCount} unhelpful votes
+                              </p>
+                            )}
+                          </div>
+                          {needsAttention ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const art = articles.find(a => a.id === needsAttention.id);
+                                if (art) { setActiveTab("articles"); openEditor(art); }
+                              }}
+                              className="self-start flex items-center gap-1 rounded border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-700 transition-colors"
+                            >
+                              Edit & Fix Article →
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-zinc-500 font-semibold">No negative feedback received</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Two-Column Grid */}
+                  {(() => {
+                    const topPerformingArticles = analyticsData?.topArticles || [];
+                    const topQueries = analyticsData?.topSearchQueries || [];
+                    return (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 text-left">
+                        {/* Top Performing Articles */}
+                        <div className="rounded-xl border border-zinc-200 bg-white shadow-md overflow-hidden flex flex-col">
+                          <div className="py-3 px-4 border-b border-zinc-100">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Top Performing Articles</h3>
+                          </div>
+                          <div className="overflow-x-auto flex-1">
+                            {topPerformingArticles.length > 0 ? (
+                              <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-zinc-100 bg-zinc-50/50 text-zinc-400 uppercase text-[10px] font-bold">
+                                    <th className="py-3.5 px-5">Title</th>
+                                    <th className="py-3.5 px-5">Views</th>
+                                    <th className="py-3.5 px-5">Helpful Rate</th>
+                                    <th className="py-3.5 px-5 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-100">
+                                  {topPerformingArticles.map((a: any) => (
+                                    <tr key={a.id} className="hover:bg-zinc-50/50 transition-colors">
+                                      <td className="py-3.5 px-5">
+                                        <div className="font-bold text-zinc-900 truncate max-w-[280px] block" title={a.title || a.label}>
+                                          {a.title || a.label || "Untitled Article"}
+                                        </div>
+                                      </td>
+                                      <td className="py-3.5 px-5 font-semibold text-zinc-650">
+                                        {a.views.toLocaleString()}
+                                      </td>
+                                      <td className="py-3.5 px-5 font-bold text-green-700">
+                                        {a.helpfulPct.toFixed(0)}%
+                                      </td>
+                                      <td className="py-3.5 px-5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const articleObj = articles.find(art => art.id === a.id);
+                                            if (articleObj) {
+                                              setActiveTab("articles");
+                                              openEditor(articleObj);
+                                            }
+                                          }}
+                                          className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs transition-colors cursor-pointer"
+                                        >
+                                          Edit
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <div className="text-center py-8 text-zinc-400 font-semibold italic">
+                                No articles views logged.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Top Search Queries */}
+                        <div className="rounded-xl border border-zinc-200 bg-white shadow-md overflow-hidden flex flex-col">
+                          <div className="py-3 px-4 border-b border-zinc-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Top Search Queries</h3>
+                              {analyticsChannel !== "all" && (
+                                <span className="rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border-blue-200">
+                                  {analyticsChannel === "customer" ? "Customer" : "Agent"} only
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActiveTab("gaps")}
+                              className="text-[10px] font-bold text-zinc-400 hover:text-zinc-800 transition-colors"
+                            >
+                              View Gap Queue →
+                            </button>
+                          </div>
+                          <div className="overflow-x-auto flex-1">
+                            {topQueries.length > 0 ? (
+                              <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-zinc-100 bg-zinc-50/50 text-zinc-500 uppercase text-[10px] font-bold">
+                                    <th className="py-3.5 px-5">Query</th>
+                                    <th className="py-3.5 px-5 text-right">Searches</th>
+                                    <th className="py-3.5 px-5 text-right">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-100">
+                                  {topQueries.map((q: any) => (
+                                    <tr key={q.query} className="hover:bg-zinc-50/50 transition-colors">
+                                      <td className="py-3.5 px-5 font-bold text-zinc-900 italic">
+                                        "{q.query}"
+                                      </td>
+                                      <td className="py-3.5 px-5 text-right font-mono font-bold text-zinc-600">
+                                        {q.count}
+                                      </td>
+                                      <td className="py-3.5 px-5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveTab("gaps")}
+                                          className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-0.5 text-[10px] font-bold text-zinc-600 transition-colors"
+                                        >
+                                          Check Gaps →
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <div className="text-center py-8 text-zinc-400 font-semibold italic">
+                                No search queries logged.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ANALYTICS VIEW */}
+          {currentTab === "analytics" && (
+            <div className="space-y-6">
+              {loadingAnalytics && !analyticsData ? (
+                <div className="text-center py-16 text-zinc-400 font-semibold animate-pulse">Loading analytics data…</div>
+              ) : !analyticsData ? (
+                <div className="text-center py-16 text-zinc-400 italic">No analytics data available.</div>
+              ) : (
+                <>
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-lg">
+                      {(["7d", "30d", "all"] as const).map(w => (
+                        <button
+                          key={w}
+                          type="button"
+                          onClick={() => setAnalyticsWindow(w)}
+                          className={`rounded-md px-3 py-1.5 text-xs font-bold transition-all ${analyticsWindow === w ? "bg-white text-zinc-950 shadow-xs" : "text-zinc-500 hover:text-zinc-800"}`}
+                        >
+                          {w === "7d" ? "Last 7 Days" : w === "30d" ? "Last 30 Days" : "All Time"}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fetchAnalytics()}
+                      disabled={loadingAnalytics}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-600 shadow-xs disabled:opacity-50 transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loadingAnalytics ? "animate-spin" : ""}>
+                        <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                      </svg>
+                      {loadingAnalytics ? "Refreshing…" : "Refresh"}
+                    </button>
+                  </div>
+
+                  {/* Summary KPI cards */}
+                  {(() => {
+                    const filteredTrend = analyticsData.dailyTrend.filter((_: any, i: number) => {
+                      if (analyticsWindow === "all") return true;
+                      const days = analyticsWindow === "7d" ? 7 : 30;
+                      return i >= analyticsData.dailyTrend.length - days;
+                    });
+                    const totalViews = analyticsData.topArticles.reduce((a: number, c: any) => a + c.views, 0);
+                    const windowViews = filteredTrend.reduce((a: any, c: any) => a + c.views, 0);
+                    const publishedCount = articles.filter(a => a.status === "Published").length;
+                    const kpis = [
+                      {
+                        label: "Total KB Views",
+                        sub: "All time",
+                        value: totalViews.toLocaleString(),
+                        accent: "from-blue-500 to-blue-400",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Views in Window",
+                        sub: analyticsWindow === "7d" ? "Last 7 days" : analyticsWindow === "30d" ? "Last 30 days" : "All time",
+                        value: windowViews.toLocaleString(),
+                        accent: "from-violet-500 to-violet-400",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Published Articles",
+                        sub: `of ${articles.length} total`,
+                        value: publishedCount.toLocaleString(),
+                        accent: "from-emerald-500 to-emerald-400",
+                        icon: (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                        ),
+                      },
+                    ];
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {kpis.map(k => (
+                          <div key={k.label} className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col gap-1">
+                            <div className={`absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r ${k.accent}`} />
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">{k.label}</span>
+                              {k.icon}
+                            </div>
+                            <span className="text-3xl font-extrabold text-zinc-950 tabular-nums leading-tight">{k.value}</span>
+                            <span className="text-[11px] text-zinc-400 font-medium">{k.sub}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Daily KB Engagement table */}
+                  {(() => {
+                    const trendRows = analyticsData.dailyTrend
+                      .filter((_: any, i: number) => {
+                        if (analyticsWindow === "all") return true;
+                        const days = analyticsWindow === "7d" ? 7 : 30;
+                        return i >= analyticsData.dailyTrend.length - days;
+                      })
+                      .filter((t: any) => !trendHideEmpty || t.views > 0 || t.clicks > 0)
+                      .slice()
+                      .reverse();
+                    return (
+                      <div className="rounded-xl border border-zinc-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+                        <div className="border-b border-zinc-100 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+                          <div>
+                            <h3 className="text-sm font-bold text-zinc-950">Daily KB Engagement</h3>
+                            <p className="text-[11px] text-zinc-400 font-medium mt-0.5">
+                              Article opens and copy-macro clicks per day — latest first
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+                            <div
+                              onClick={() => setTrendHideEmpty(v => !v)}
+                              className={`relative w-8 h-4 rounded-full transition-colors ${trendHideEmpty ? "bg-zinc-800" : "bg-zinc-200"}`}
+                            >
+                              <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${trendHideEmpty ? "translate-x-4" : ""}`} />
+                            </div>
+                            <span className="text-[11px] font-semibold text-zinc-500">Hide inactive days</span>
+                          </label>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full table-fixed text-xs text-zinc-800 text-left border-collapse">
+                            <colgroup>
+                              <col className="w-1/4" />
+                              <col className="w-1/4" />
+                              <col className="w-1/4" />
+                              <col className="w-1/4" />
+                            </colgroup>
+                            <thead>
+                              <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider">
+                                <th className="p-4">Date</th>
+                                <th className="p-4">Article Views</th>
+                                <th className="p-4">Macro Clicks</th>
+                                <th className="p-4">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-50">
+                              {trendRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="p-8 text-center text-zinc-400 text-xs font-medium italic">No activity recorded in this window.</td>
+                                </tr>
+                              ) : trendRows.map((t: any) => {
+                                const total = t.views + t.clicks;
+                                const inactive = total === 0;
+                                return (
+                                  <tr key={t.date} className="hover:bg-zinc-50/50 transition-colors">
+                                    <td className="p-4 font-mono text-[11px] font-bold text-zinc-500">{t.date}</td>
+                                    <td className={`p-4 font-semibold ${inactive ? "text-zinc-300" : "text-zinc-800"}`}>{t.views.toLocaleString()}</td>
+                                    <td className={`p-4 font-semibold ${inactive ? "text-zinc-300" : "text-zinc-800"}`}>{t.clicks.toLocaleString()}</td>
+                                    <td className={`p-4 font-bold ${inactive ? "text-zinc-300" : "text-zinc-950"}`}>{total.toLocaleString()}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {trendRows.length > 0 && (
+                          <div className="border-t border-zinc-100 px-5 py-2.5 flex items-center justify-end">
+                            <span className="text-[10px] text-zinc-400 font-medium">{trendRows.length} day{trendRows.length !== 1 ? "s" : ""} shown</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Top articles + agent ranking */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top Performing Articles */}
+                    {(() => {
+                      const filtered = analyticsData.topArticles
+                        .filter((a: any) => !articleSearchFilter || a.title?.toLowerCase().includes(articleSearchFilter.toLowerCase()))
+                        .slice()
+                        .sort((a: any, b: any) =>
+                          articleAnalyticsSort === "helpfulPct"
+                            ? (b.helpfulPct ?? -1) - (a.helpfulPct ?? -1)
+                            : b.views - a.views
+                        );
+                      return (
+                        <div className="rounded-xl border border-zinc-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+                          <div className="border-b border-zinc-100 px-5 py-4 space-y-3">
+                            <div>
+                              <h3 className="text-sm font-bold text-zinc-950">Top Performing Articles</h3>
+                              <p className="text-[11px] text-zinc-400 font-medium mt-0.5">Most-viewed articles across all categories</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                </svg>
+                                <input
+                                  type="text"
+                                  placeholder="Search articles…"
+                                  value={articleSearchFilter}
+                                  onChange={e => setArticleSearchFilter(e.target.value)}
+                                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-7 pr-3 py-1.5 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 focus:bg-white transition-colors"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg shrink-0">
+                                {(["views", "helpfulPct"] as const).map(s => (
+                                  <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => setArticleAnalyticsSort(s)}
+                                    className={`rounded-md px-2.5 py-1 text-[10px] font-bold transition-all ${articleAnalyticsSort === s ? "bg-white text-zinc-950 shadow-xs" : "text-zinc-500 hover:text-zinc-800"}`}
+                                  >
+                                    {s === "views" ? "Views" : "Helpful %"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                              <thead>
+                                <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider">
+                                  <th className="p-4">Article</th>
+                                  <th className="p-4 text-right">Views</th>
+                                  <th className="p-4 text-right">Helpful %</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-50">
+                                {filtered.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={3} className="p-8 text-center text-zinc-400 text-xs font-medium italic">
+                                      {articleSearchFilter ? `No articles match "${articleSearchFilter}"` : "No article views recorded yet."}
+                                    </td>
+                                  </tr>
+                                ) : filtered.map((a: any, idx: number) => (
+                                  <tr key={a.id} className="hover:bg-zinc-50/50 transition-colors">
+                                    <td className="p-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="shrink-0 w-5 h-5 rounded-full bg-zinc-100 text-zinc-500 text-[10px] font-extrabold flex items-center justify-center">{idx + 1}</span>
+                                        <span className="font-semibold text-zinc-900 leading-snug line-clamp-2">{a.title}</span>
+                                      </div>
+                                    </td>
+                                    <td className="p-4 text-right font-bold text-zinc-950 tabular-nums">{a.views.toLocaleString()}</td>
+                                    <td className="p-4 text-right">
+                                      {a.helpfulPct != null && a.helpfulPct > 0 ? (
+                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${a.helpfulPct >= 80 ? "bg-green-50 text-green-700" : a.helpfulPct >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600"}`}>
+                                          {a.helpfulPct}%
+                                        </span>
+                                      ) : (
+                                        <span className="text-zinc-300 font-bold">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {filtered.length > 0 && (
+                            <div className="border-t border-zinc-100 px-5 py-2.5 flex items-center justify-end">
+                              <span className="text-[10px] text-zinc-400 font-medium">{filtered.length} article{filtered.length !== 1 ? "s" : ""}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Agent Usage Ranking */}
+                    {(() => {
+                      const filtered = analyticsData.topAgents
+                        .filter((ag: any) => !agentSearchFilter || ag.name?.toLowerCase().includes(agentSearchFilter.toLowerCase()) || ag.email?.toLowerCase().includes(agentSearchFilter.toLowerCase()))
+                        .slice()
+                        .sort((a: any, b: any) =>
+                          agentAnalyticsSort === "clicks" ? b.clicks - a.clicks : b.views - a.views
+                        );
+                      return (
+                        <div className="rounded-xl border border-zinc-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+                          <div className="border-b border-zinc-100 px-5 py-4 space-y-3">
+                            <div>
+                              <h3 className="text-sm font-bold text-zinc-950">Agent Usage Ranking</h3>
+                              <p className="text-[11px] text-zinc-400 font-medium mt-0.5">Agents ranked by KB engagement — views and macro clicks</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                </svg>
+                                <input
+                                  type="text"
+                                  placeholder="Search agents…"
+                                  value={agentSearchFilter}
+                                  onChange={e => setAgentSearchFilter(e.target.value)}
+                                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-7 pr-3 py-1.5 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 focus:bg-white transition-colors"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg shrink-0">
+                                {(["views", "clicks"] as const).map(s => (
+                                  <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => setAgentAnalyticsSort(s)}
+                                    className={`rounded-md px-2.5 py-1 text-[10px] font-bold transition-all ${agentAnalyticsSort === s ? "bg-white text-zinc-950 shadow-xs" : "text-zinc-500 hover:text-zinc-800"}`}
+                                  >
+                                    {s === "views" ? "Views" : "Macro Clicks"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-zinc-800 text-left border-collapse">
+                              <thead>
+                                <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider">
+                                  <th className="p-4">Agent</th>
+                                  <th className="p-4 text-right">Views</th>
+                                  <th className="p-4 text-right">Macro Clicks</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-50">
+                                {filtered.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={3} className="p-8 text-center text-zinc-400 text-xs font-medium italic">
+                                      {agentSearchFilter ? `No agents match "${agentSearchFilter}"` : "No agent activity recorded yet."}
+                                    </td>
+                                  </tr>
+                                ) : filtered.map((ag: any, idx: number) => (
+                                  <tr key={ag.id} className="hover:bg-zinc-50/50 transition-colors">
+                                    <td className="p-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="shrink-0 w-5 h-5 rounded-full bg-zinc-100 text-zinc-500 text-[10px] font-extrabold flex items-center justify-center">{idx + 1}</span>
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-zinc-900 truncate">{ag.name}</div>
+                                          <div className="text-[10px] text-zinc-400 font-normal truncate">{ag.email}</div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="p-4 text-right font-bold text-zinc-950 tabular-nums">{ag.views.toLocaleString()}</td>
+                                    <td className="p-4 text-right font-bold text-zinc-950 tabular-nums">{ag.clicks.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {filtered.length > 0 && (
+                            <div className="border-t border-zinc-100 px-5 py-2.5 flex items-center justify-end">
+                              <span className="text-[10px] text-zinc-400 font-medium">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* RESOLUTION MODAL OVERLAY FOR GAPS */}
+          {resolvingGap && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-xs">
+              <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left">
+                <div>
+                  <h3 className="text-sm font-extrabold text-zinc-955">Resolve Knowledge Gap</h3>
+                  <p className="text-xs text-zinc-500 font-semibold mt-1">
+                    Link this search query gap to a published support article.
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-zinc-50 p-3.5 border border-zinc-200 text-xs italic font-semibold text-zinc-700">
+                  Query: "{resolvingGap.query_text}"
+                </div>
+
+                <form onSubmit={handleResolveGapSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                      Select Resolving Article
+                    </label>
+                    <select
+                      required
+                      value={selectedResolvingArticleId}
+                      onChange={(e) => setSelectedResolvingArticleId(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-855 focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="">-- Choose Published Article --</option>
+                      {articles
+                        .filter((a) => a.status === "Published")
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.title} (/{a.slug})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResolvingGap(null);
+                        setSelectedResolvingArticleId("");
+                      }}
+                      className="rounded border border-zinc-200 bg-white px-3.5 py-1.5 text-xs font-bold text-zinc-650"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded bg-green-600 hover:bg-green-700 px-4 py-1.5 text-xs font-bold text-white shadow-xs"
+                    >
+                      Submit Resolution
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* REJECTION FEEDBACK INPUT MODAL OVERLAY */}
+          {rejectionModalArticleId && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-xs">
+              <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-800">
+                    Rejection Feedback
+                  </h4>
+                  <p className="text-[10px] text-zinc-450 font-medium mt-1">
+                    Please provide a rejection reason/feedback. The author will see this feedback in order to revise and resubmit.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <textarea
+                    required
+                    rows={4}
+                    value={rejectionModalComment}
+                    onChange={(e) => setRejectionModalComment(e.target.value)}
+                    placeholder="e.g. Please clarify step 3, update the screenshots, check spelling..."
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-850 focus:outline-hidden"
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-2 border-t border-zinc-150">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejectionModalArticleId(null);
+                      setRejectionModalComment("");
+                    }}
+                    className="rounded border border-zinc-200 bg-white px-4 py-1.5 text-xs font-bold text-zinc-650"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submittingRejection}
+                    onClick={() => {
+                      if (!rejectionModalComment.trim()) {
+                        toast("Please enter a rejection reason before submitting.", "warning");
+                        return;
+                      }
+                      handleDirectStatusTransition(rejectionModalArticleId, "Rejected", rejectionModalComment);
+                    }}
+                    className="rounded bg-red-600 hover:bg-red-700 px-4 py-1.5 text-xs font-bold text-white shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submittingRejection ? "Submitting…" : "Submit Rejection"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
