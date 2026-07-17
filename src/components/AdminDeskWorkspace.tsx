@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
+import TroubleshootingFlowBuilder from "@/components/TroubleshootingFlowBuilder";
 import { useToast } from "@/components/ToastProvider";
 
 type AdminArticle = {
@@ -99,59 +100,6 @@ type WorkspaceProps = {
   onUpdateArticles?: (updatedArticles: AdminArticle[]) => void;
   seededGap?: { id: string; query_text: string } | null;
   onRedirectToTab?: (tab: "articles" | "gaps" | "workflows" | "audit", seededGap?: { id: string; query_text: string }) => void;
-};
-
-const SAMPLE_TROUBLESHOOTING_FLOW = {
-  start_node: "node1",
-  nodes: {
-    node1: {
-      text: "Is the SIM card showing 'No Service' or 'Invalid SIM'?",
-      options: [
-        { text: "No Service", next: "node_no_service" },
-        { text: "Invalid SIM", next: "node_invalid_sim" }
-      ]
-    },
-    node_no_service: {
-      text: "Check network coverage. Is automatic network selection enabled in carrier settings?",
-      options: [
-        { text: "Yes, but still no service", next: "escalate_network" },
-        { text: "No, let me enable it", next: "resolve_carrier" }
-      ]
-    },
-    node_invalid_sim: {
-      text: "Clean the SIM copper chip with a dry soft cloth and re-insert. Did it resolve the issue?",
-      is_terminal: false,
-      yes_node: "node2",
-      no_node: "node3"
-    },
-    node2: {
-      text: "Is the SIM card physical or eSIM?",
-      is_terminal: false,
-      yes_node: "escalate_network",
-      no_node: "escalate_replace"
-    },
-    node3: {
-      text: "Try restarting the device. Did it restore connectivity?",
-      is_terminal: false,
-      yes_node: "resolve_network",
-      no_node: "node2"
-    },
-    resolve_network: {
-      text: "Issue resolved by enabling automatic network selection.",
-      is_terminal: true,
-      outcome: "resolve"
-    },
-    escalate_network: {
-      text: "Escalate to Network Engineering: Verify local cell tower outage in client area.",
-      is_terminal: true,
-      outcome: "escalate"
-    },
-    escalate_replace: {
-      text: "Escalate to Customer Care: Recommend SIM swap replacement at Zain Store.",
-      is_terminal: true,
-      outcome: "escalate"
-    }
-  }
 };
 
 export default function AdminDeskWorkspace({
@@ -3168,43 +3116,19 @@ export default function AdminDeskWorkspace({
                         const setFlowValue = variantTab === "default" ? setVDefaultFlow : setVAgentFlow;
                         return (
                           <div className="space-y-2 pt-4 border-t border-zinc-150 text-left">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
-                                Interactive Troubleshooting Flow JSON {variantTab === "default" ? "(Customer-Facing)" : "(Agent)"}
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => setFlowValue(JSON.stringify(SAMPLE_TROUBLESHOOTING_FLOW, null, 2))}
-                                className="rounded border border-zinc-250 bg-white px-2 py-1 text-[9px] font-bold text-zinc-700 hover:text-zinc-955 shadow-2xs cursor-pointer"
-                              >
-                                Load Template Flow
-                              </button>
-                            </div>
-                            <textarea
-                              rows={6}
-                              value={flowValue}
-                              onChange={(e) => setFlowValue(e.target.value)}
-                              className="w-full rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-850 focus:outline-hidden font-mono shadow-inner"
-                              placeholder='{ "start_node": "...", "nodes": { ... } }'
-                            />
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                              Troubleshooting Guide {variantTab === "default" ? "(Customer-Facing)" : "(Agent)"}
+                            </label>
                             {variantTab === "default" && (
-                              <p className="text-[9px] text-zinc-400 font-semibold">
+                              <p className="text-[9px] text-zinc-400 font-semibold -mt-1">
                                 Shown to customers on the public article page as a self-service, step-by-step guide.
                               </p>
                             )}
-                            {flowValue && (
-                              <div className="border border-zinc-200 rounded-lg p-4 bg-zinc-50 mt-2">
-                                <span className="text-[10px] text-zinc-450 font-bold uppercase block mb-3">Live Flow Tester Preview:</span>
-                                {(() => {
-                                  try {
-                                    const parsed = JSON.parse(flowValue);
-                                    return <TroubleshootingPlayer flow={parsed} />;
-                                  } catch (err) {
-                                    return <span className="text-[10px] text-red-500 font-semibold font-mono">Invalid JSON syntax. Fix structure to preview flow player.</span>;
-                                  }
-                                })()}
-                              </div>
-                            )}
+                            <TroubleshootingFlowBuilder
+                              key={`${editingArticle?.id || "new"}-${variantTab}`}
+                              value={flowValue}
+                              onChange={setFlowValue}
+                            />
                           </div>
                         );
                       })()}
