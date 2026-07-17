@@ -76,6 +76,9 @@ export async function POST(req: NextRequest) {
     const cleanQuery = query.trim();
     const words = cleanQuery.split(/\s+/).filter((w) => w.length > 1);
 
+    // Check if query is a valid UUID to support search by reference number (TC5)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanQuery);
+
     const searchConditions: any[] = [
       { title: { contains: cleanQuery, mode: "insensitive" } },
       { slug: { contains: cleanQuery, mode: "insensitive" } },
@@ -83,6 +86,7 @@ export async function POST(req: NextRequest) {
       // Search inside article variant bodies so Arabic and multi-language content is findable
       { variants: { some: { detailed_steps: { contains: cleanQuery, mode: "insensitive" } } } },
       { variants: { some: { short_answer: { contains: cleanQuery, mode: "insensitive" } } } },
+      ...(isUuid ? [{ id: { equals: cleanQuery } }] : []),
     ];
 
     // Make query flexible by matching individual words too
@@ -146,8 +150,8 @@ export async function POST(req: NextRequest) {
 
       let score = 0.0;
 
-      // 1. Exact title match: 1.0
-      if (titleLower === queryLower) {
+      // 1. Exact title match or exact reference ID/UUID match: 1.0
+      if (titleLower === queryLower || cleanQuery.toLowerCase() === article.id.toLowerCase()) {
         score = 1.0;
       }
       // 2. Title starts with query: 0.85
