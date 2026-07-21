@@ -1500,7 +1500,7 @@ export default function AgentDeskWorkspace({
               <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {kpiCards.map((card) => (
-                  <div key={card.label} className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                  <div key={card.label} className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                     <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: `linear-gradient(90deg, ${card.accentFrom}, ${card.accentTo})` }} />
                     <div className="flex items-start justify-between">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">{card.label}</span>

@@ -1828,7 +1828,7 @@ export default function AdminDeskWorkspace({
                               </th>
                             );
                             return (
-                              <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider">
+                              <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider border-l-[3px] border-l-transparent">
                                 <th className="p-4">ID</th>
                                 <SortTh field="title" label="Title" />
                                 <SortTh field="category" label="Category" />
@@ -2595,10 +2595,35 @@ export default function AdminDeskWorkspace({
                       {/* Variant Selection Tabs */}
                       <div className="flex border-b border-zinc-200 pb-2 mb-4 gap-2 overflow-x-auto text-left">
                         {[
-                          { id: "default", label: "Default Variant", icon: "🌐" },
-                          { id: "agent", label: "Agent Desk", icon: "👥" },
-                          { id: "chatbot", label: "Chatbot", icon: "🤖" },
-                          { id: "whatsapp", label: "WhatsApp", icon: "💬" }
+                          { id: "default", label: "Default Variant", icon: (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <circle cx="12" cy="12" r="10" />
+                              <line x1="2" y1="12" x2="22" y2="12" />
+                              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                            </svg>
+                          ) },
+                          { id: "agent", label: "Agent Desk", icon: (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                              <circle cx="9" cy="7" r="4" />
+                              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                          ) },
+                          { id: "chatbot", label: "Chatbot", icon: (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <rect x="3" y="11" width="18" height="10" rx="2" />
+                              <circle cx="12" cy="5" r="2" />
+                              <path d="M12 7v4" />
+                              <line x1="8" y1="16" x2="8" y2="16" />
+                              <line x1="16" y1="16" x2="16" y2="16" />
+                            </svg>
+                          ) },
+                          { id: "whatsapp", label: "WhatsApp", icon: (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                            </svg>
+                          ) }
                         ].map((tab) => {
                           const isActive = variantTab === tab.id;
                           const isEmpty = isVariantEmpty(tab.id);
@@ -2707,16 +2732,16 @@ export default function AdminDeskWorkspace({
                         <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block text-left">Detailed Steps</label>
                         <div className="rounded-xl border border-zinc-200 bg-white shadow-2xs overflow-hidden">
                           {/* Floating Formatting Toolbar */}
-                          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-50/50 p-2.5 border-b border-zinc-200 text-left">
+                          <div className="flex flex-wrap items-center gap-1 bg-zinc-50 border-b border-zinc-200 p-2 text-left shadow-2xs">
                             {/* Undo / Redo */}
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand('undo')}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-zinc-200 shadow-2xs"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Undo"
                             >
-                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                               </svg>
                             </button>
@@ -2724,20 +2749,20 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand('redo')}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-zinc-200 shadow-2xs"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Redo"
                             >
-                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2m18-22l-6 6m6-6l-6-6" />
                               </svg>
                             </button>
 
-                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+                            <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
                             {/* Text Style Dropdown */}
                             <select
                               onChange={(e) => executeCommand("formatBlock", e.target.value === "paragraph" ? "<p>" : `<${e.target.value}>`)}
-                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-bold text-zinc-655 cursor-pointer focus:outline-hidden"
+                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden hover:bg-zinc-50"
                               defaultValue="paragraph"
                             >
                               <option value="paragraph">Normal text</option>
@@ -2749,7 +2774,7 @@ export default function AdminDeskWorkspace({
                             {/* Font Size Dropdown */}
                             <select
                               onChange={(e) => executeCommand("fontSize", e.target.value)}
-                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-bold text-zinc-655 cursor-pointer focus:outline-hidden"
+                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden hover:bg-zinc-50"
                               defaultValue="16"
                             >
                               <option value="12">12</option>
@@ -2759,44 +2784,44 @@ export default function AdminDeskWorkspace({
                               <option value="20">20</option>
                             </select>
 
-                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+                            <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
                             {/* Bold, Italic, Underline, Strikethrough */}
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("bold")}
-                              className="w-8 h-8 flex items-center justify-center text-xs font-black text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 font-extrabold cursor-pointer border border-transparent"
                               title="Bold"
                             >
-                              B
+                              <span className="text-sm font-black">B</span>
                             </button>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("italic")}
-                              className="w-8 h-8 flex items-center justify-center text-xs italic text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 italic font-serif cursor-pointer border border-transparent"
                               title="Italic"
                             >
-                              I
+                              <span className="text-sm font-bold">I</span>
                             </button>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("underline")}
-                              className="w-8 h-8 flex items-center justify-center text-xs underline text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 underline cursor-pointer border border-transparent"
                               title="Underline"
                             >
-                              U
+                              <span className="text-sm font-bold">U</span>
                             </button>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("strikeThrough")}
-                              className="w-8 h-8 flex items-center justify-center text-xs line-through text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 line-through cursor-pointer border border-transparent"
                               title="Strikethrough"
                             >
-                              S
+                              <span className="text-sm font-bold">S</span>
                             </button>
 
                             {/* Text Color / Highlight */}
@@ -2807,11 +2832,11 @@ export default function AdminDeskWorkspace({
                                 const color = prompt("Enter text color (e.g. red, #ef4444):", "#ef4444");
                                 if (color) executeCommand("foreColor", color);
                               }}
-                              className="w-8 h-8 flex items-center justify-center text-xs text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs gap-0.5 font-bold"
+                              className="h-8 w-8 flex flex-col items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent -space-y-0.5"
                               title="Text Color"
                             >
-                              <span>T</span>
-                              <span className="text-[10px] text-red-500 font-bold">●</span>
+                              <span className="text-xs font-bold">A</span>
+                              <span className="w-3.5 h-0.5 bg-zinc-900 rounded-full" />
                             </button>
                             <button
                               type="button"
@@ -2820,20 +2845,20 @@ export default function AdminDeskWorkspace({
                                 const color = prompt("Enter highlight color (e.g. yellow, #fef08a):", "#fef08a");
                                 if (color) executeCommand("backColor", color);
                               }}
-                              className="w-8 h-8 flex items-center justify-center text-xs text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-650 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Highlight Color"
                             >
-                              ✏️
+                              <span className="text-xs">🎨</span>
                             </button>
 
-                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+                            <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
                             {/* Alignments */}
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("justifyLeft")}
-                              className="p-1.5 text-zinc-550 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Align Left"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2844,7 +2869,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("justifyCenter")}
-                              className="p-1.5 text-zinc-550 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Align Center"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2855,7 +2880,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("justifyRight")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Align Right"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2866,7 +2891,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("justifyFull")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Justify"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2874,36 +2899,40 @@ export default function AdminDeskWorkspace({
                               </svg>
                             </button>
 
-                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+                            <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
                             {/* Lists & Indents */}
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("insertUnorderedList")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Bullet List"
                             >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <circle cx="4.5" cy="6" r="1.2" fill="currentColor" />
+                                <circle cx="4.5" cy="12" r="1.2" fill="currentColor" />
+                                <circle cx="4.5" cy="18" r="1.2" fill="currentColor" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6h11M9 12h11M9 18h11" />
                               </svg>
                             </button>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("insertOrderedList")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Numbered List"
                             >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h13M7 12h13M7 16h13M3 8h.01M3 12h.01M3 16h.01" />
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 4h1v3.5M3 7.5h2M3 12.5a1.2 1.2 0 0 1 2.4 0c0 .8-1.2 1.5-1.2 1.5h1.2M3 17.5h2M3 15.5h1.6a1.2 1.2 0 0 1 0 2.4" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6h11M9 12h11M9 18h11" />
                               </svg>
                             </button>
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("outdent")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Decrease Indent"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2914,7 +2943,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("indent")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Increase Indent"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2922,14 +2951,14 @@ export default function AdminDeskWorkspace({
                               </svg>
                             </button>
 
-                            <div className="h-5 w-px bg-zinc-200 mx-1" />
+                            <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
                             {/* Link, Image, Table, HR, Clear */}
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("createLink")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Insert Link"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2940,7 +2969,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => document.getElementById("image-file-input")?.click()}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Upload Image Guide"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2951,7 +2980,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("insertTable")}
-                              className="p-1.5 text-zinc-555 hover:text-zinc-900 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Insert Table"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -2962,7 +2991,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("insertHorizontalRule")}
-                              className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-650 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 font-bold cursor-pointer border border-transparent"
                               title="Insert Horizontal Rule"
                             >
                               —
@@ -2971,7 +3000,7 @@ export default function AdminDeskWorkspace({
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => executeCommand("clearFormatting")}
-                              className="w-8 h-8 flex items-center justify-center text-xs font-bold text-zinc-655 hover:bg-zinc-50 hover:text-zinc-955 rounded-lg border border-zinc-200 cursor-pointer shadow-2xs font-bold"
+                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 font-bold cursor-pointer border border-transparent"
                               title="Clear Formatting"
                             >
                               Tx

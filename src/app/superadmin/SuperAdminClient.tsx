@@ -615,7 +615,7 @@ export default function SuperAdminClient({
                   {/* KPI Row */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                     {/* Total Views */}
-                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                       <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg,#7c3aed,#a78bfa)" }} />
                       <div className="flex items-start justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Views</span>
@@ -626,7 +626,7 @@ export default function SuperAdminClient({
                     </div>
                     {/* Helpful Rate */}
                     <div
-                      className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] hover:border-zinc-300 transition-all text-left overflow-hidden flex flex-col justify-between h-[120px] cursor-pointer"
+                      className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] hover:border-zinc-300 transition-all text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6 cursor-pointer"
                       onClick={() => {
                         setArticleFiltersPreset({ status: "Published", helpful: "All", sort: "helpfulRate", sortDir: "asc" });
                         setActiveTab("articles");
@@ -656,7 +656,7 @@ export default function SuperAdminClient({
                       )}
                     </div>
                     {/* Knowledge Gaps */}
-                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                       <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg,#dc2626,#f87171)" }} />
                       <div className="flex items-start justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Knowledge Gaps</span>
@@ -670,7 +670,7 @@ export default function SuperAdminClient({
                       )}
                     </div>
                     {/* Total Searches */}
-                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                       <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg,#059669,#34d399)" }} />
                       <div className="flex items-start justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Searches</span>
@@ -687,7 +687,7 @@ export default function SuperAdminClient({
                       )}
                     </div>
                     {/* Avg. Confidence */}
-                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                       <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg,#d97706,#fbbf24)" }} />
                       <div className="flex items-start justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Avg. Confidence</span>
@@ -704,7 +704,7 @@ export default function SuperAdminClient({
                       </div>
                     </div>
                     {/* Total Articles */}
-                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between h-[120px]">
+                    <div className="relative rounded-xl border border-zinc-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.10)] transition-shadow text-left overflow-hidden flex flex-col justify-between min-h-[120px] h-auto pb-6">
                       <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg,#2563eb,#60a5fa)" }} />
                       <div className="flex items-start justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Articles</span>
@@ -1083,7 +1083,7 @@ export default function SuperAdminClient({
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[520px] text-left">
                       <thead>
-                        <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider">
+                        <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider border-l-[3px] border-l-transparent">
                           <th className="py-3 px-5">Organization</th>
                           <th className="py-3 px-5">Slug</th>
                           <th className="py-3 px-5">Brand Color</th>
@@ -1341,7 +1341,7 @@ export default function SuperAdminClient({
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[700px] text-left text-sm text-zinc-750">
                       <thead>
-                        <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider">
+                        <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider border-l-[3px] border-l-transparent">
                           <th className="py-3 px-4">Name</th>
                           <th className="py-3 px-4">Email</th>
                           <th className="py-3 px-4">Organization</th>
@@ -1578,7 +1578,7 @@ export default function SuperAdminClient({
                     ) : (
                       <table className="w-full min-w-[560px] text-left text-sm text-zinc-750">
                         <thead>
-                          <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider">
+                          <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 text-[10px] font-bold uppercase tracking-wider border-l-[3px] border-l-transparent">
                             <th className="py-3 px-4">Name</th>
                             <th className="py-3 px-4">Organization</th>
                             <th className="py-3 px-4">Members</th>
