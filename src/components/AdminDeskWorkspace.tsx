@@ -7,6 +7,21 @@ import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 import TroubleshootingFlowBuilder from "@/components/TroubleshootingFlowBuilder";
 import { useToast } from "@/components/ToastProvider";
 
+const standardPalette = [
+  // Monochrome/Grayscale
+  "#000000", "#434343", "#666666", "#999999", "#b7b7b7", "#cccccc", "#d9d9d9", "#efefef", "#f3f4f6", "#ffffff",
+  // Row 2 (Pastels)
+  "#e6b8af", "#f4cccc", "#fce5cd", "#fff2cc", "#d9ead3", "#d0e0e3", "#c9daf8", "#cfe2f3", "#d9d2e9", "#ead1dc",
+  // Row 3 (Light)
+  "#dd7e6b", "#ea9999", "#f9cb9c", "#ffe599", "#b6d7a8", "#a2c4c9", "#a4c2f4", "#9fc5e8", "#b4a7d6", "#d5a6bd",
+  // Row 4 (Medium)
+  "#cc4125", "#e06666", "#f6b26b", "#ffd966", "#93c47d", "#76a5af", "#6fa8dc", "#3d85c6", "#8e7cc3", "#c27ba0",
+  // Row 5 (Bright / Dark)
+  "#a61c00", "#cc0000", "#e69138", "#f1c232", "#6aa84f", "#45818e", "#3d85c6", "#073763", "#20124d", "#4c1130",
+  // Row 6 (Deep Dark)
+  "#851400", "#990000", "#b45f06", "#bf9000", "#38761d", "#134f5c", "#0b5394", "#351c75", "#5b0f00", "#660000"
+];
+
 type AdminArticle = {
   id: string;
   title: string;
@@ -140,6 +155,10 @@ export default function AdminDeskWorkspace({
   const [glossarySearch, setGlossarySearch] = useState("");
   const [glossaryCategory, setGlossaryCategory] = useState("All");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [textColor, setTextColor] = useState("#000000");
+  const [highlightColor, setHighlightColor] = useState("#ffffff");
+  const [textColorOpen, setTextColorOpen] = useState(false);
+  const [highlightColorOpen, setHighlightColorOpen] = useState(false);
   const currentTab = overrideActiveTab || activeTab;
 
   useEffect(() => {
@@ -2848,32 +2867,140 @@ export default function AdminDeskWorkspace({
                               <span className="text-sm font-bold">S</span>
                             </button>
 
-                            {/* Text Color / Highlight */}
-                            <button
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                const color = prompt("Enter text color (e.g. red, #ef4444):", "#ef4444");
-                                if (color) executeCommand("foreColor", color);
-                              }}
-                              className="h-8 w-8 flex flex-col items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent -space-y-0.5"
-                              title="Text Color"
-                            >
-                              <span className="text-xs font-bold">A</span>
-                              <span className="w-3.5 h-0.5 bg-zinc-900 rounded-full" />
-                            </button>
-                            <button
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                const color = prompt("Enter highlight color (e.g. yellow, #fef08a):", "#fef08a");
-                                if (color) executeCommand("backColor", color);
-                              }}
-                              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-650 hover:text-zinc-900 cursor-pointer border border-transparent"
-                              title="Highlight Color"
-                            >
-                              <span className="text-xs">🎨</span>
-                            </button>
+                            {/* Text Color */}
+                            <div className="relative inline-block text-left">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setTextColorOpen(!textColorOpen);
+                                  setHighlightColorOpen(false);
+                                }}
+                                className={`h-8 w-8 flex flex-col items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border ${textColorOpen ? "bg-zinc-150 border-zinc-300" : "border-transparent"} -space-y-0.5`}
+                                title="Text Color"
+                              >
+                                <span className="text-xs font-bold">A</span>
+                                <div className="w-3.5 h-0.5" style={{ backgroundColor: textColor }} />
+                              </button>
+                              {textColorOpen && (
+                                <>
+                                  <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setTextColorOpen(false)} />
+                                  <div className="absolute top-full left-0 z-50 mt-1.5 p-3 bg-white rounded-lg border border-zinc-200 shadow-xl w-[210px] flex flex-col gap-2 text-left">
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Custom</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => {
+                                          document.getElementById("hidden-text-color-picker")?.click();
+                                        }}
+                                        className="w-6 h-6 rounded-full border border-zinc-300 hover:border-zinc-450 flex items-center justify-center cursor-pointer transition-all hover:bg-zinc-50 shadow-2xs text-zinc-650 hover:text-zinc-950 font-extrabold text-sm"
+                                        title="Add custom color"
+                                      >
+                                        +
+                                      </button>
+                                      <input
+                                        id="hidden-text-color-picker"
+                                        type="color"
+                                        value={textColor}
+                                        onChange={(e) => {
+                                          setTextColor(e.target.value);
+                                          executeCommand("foreColor", e.target.value);
+                                          setTextColorOpen(false);
+                                        }}
+                                        className="sr-only hidden"
+                                      />
+                                    </div>
+                                    <div className="h-px bg-zinc-150 w-full my-0.5" />
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Standard Colors</div>
+                                    <div className="grid grid-cols-10 gap-1">
+                                      {standardPalette.map((color) => (
+                                        <button
+                                          key={color}
+                                          type="button"
+                                          onMouseDown={(e) => e.preventDefault()}
+                                          onClick={() => {
+                                            setTextColor(color);
+                                            executeCommand("foreColor", color);
+                                            setTextColorOpen(false);
+                                          }}
+                                          className="w-4 h-4 rounded-xs border border-zinc-200/60 hover:scale-110 active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                                          style={{ backgroundColor: color }}
+                                          title={color}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Highlight Color */}
+                            <div className="relative inline-block text-left">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setHighlightColorOpen(!highlightColorOpen);
+                                  setTextColorOpen(false);
+                                }}
+                                className={`h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-650 hover:text-zinc-900 cursor-pointer border ${highlightColorOpen ? "bg-zinc-150 border-zinc-300" : "border-transparent"}`}
+                                title="Highlight Color"
+                              >
+                                <span className="text-xs">🎨</span>
+                              </button>
+                              {highlightColorOpen && (
+                                <>
+                                  <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setHighlightColorOpen(false)} />
+                                  <div className="absolute top-full left-0 z-50 mt-1.5 p-3 bg-white rounded-lg border border-zinc-200 shadow-xl w-[210px] flex flex-col gap-2 text-left">
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Custom</div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => {
+                                          document.getElementById("hidden-bg-color-picker")?.click();
+                                        }}
+                                        className="w-6 h-6 rounded-full border border-zinc-300 hover:border-zinc-450 flex items-center justify-center cursor-pointer transition-all hover:bg-zinc-50 shadow-2xs text-zinc-650 hover:text-zinc-955 font-extrabold text-sm"
+                                        title="Add custom color"
+                                      >
+                                        +
+                                      </button>
+                                      <input
+                                        id="hidden-bg-color-picker"
+                                        type="color"
+                                        value={highlightColor}
+                                        onChange={(e) => {
+                                          setHighlightColor(e.target.value);
+                                          executeCommand("backColor", e.target.value);
+                                          setHighlightColorOpen(false);
+                                        }}
+                                        className="sr-only hidden"
+                                      />
+                                    </div>
+                                    <div className="h-px bg-zinc-150 w-full my-0.5" />
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Standard Colors</div>
+                                    <div className="grid grid-cols-10 gap-1">
+                                      {standardPalette.map((color) => (
+                                        <button
+                                          key={color}
+                                          type="button"
+                                          onMouseDown={(e) => e.preventDefault()}
+                                          onClick={() => {
+                                            setHighlightColor(color);
+                                            executeCommand("backColor", color);
+                                            setHighlightColorOpen(false);
+                                          }}
+                                          className="w-4 h-4 rounded-xs border border-zinc-200/60 hover:scale-110 active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                                          style={{ backgroundColor: color }}
+                                          title={color}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
 
                             <div className="h-5 w-px bg-zinc-200 mx-1.5 align-middle self-center" />
 
