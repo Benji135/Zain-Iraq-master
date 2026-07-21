@@ -463,7 +463,7 @@ export default function AdminDeskWorkspace({
     if (currentTab === "articles" && Object.keys(articleViewCounts).length === 0) {
       fetchAnalytics();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTab]);
 
   const fetchFilteredGaps = async () => {
@@ -1670,8 +1670,8 @@ export default function AdminDeskWorkspace({
             <div className="mb-4 space-y-2">
               {notifications.map(n => (
                 <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${n.uiType === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
-                    n.uiType === "success" ? "border-green-200 bg-green-50 text-green-800" :
-                      "border-blue-200 bg-blue-50 text-blue-800"
+                  n.uiType === "success" ? "border-green-200 bg-green-50 text-green-800" :
+                    "border-blue-200 bg-blue-50 text-blue-800"
                   }`}>
                   <div className="flex items-start gap-2">
                     <span>{n.uiType === "warning" ? "⚠️" : n.uiType === "success" ? "✅" : "ℹ️"}</span>
@@ -1712,7 +1712,7 @@ export default function AdminDeskWorkspace({
                 /* Table list view matching the Mockup */
                 <div className="space-y-6">
                   {/* Header Title and + New Article button */}
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="text-left">
                       <h2 className="text-xl font-extrabold text-zinc-950">All Articles</h2>
                       <p className="text-xs text-zinc-500 font-medium mt-1">
@@ -1729,9 +1729,24 @@ export default function AdminDeskWorkspace({
                   </div>
 
                   {/* Filters Toolbar Row */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                    {/* Tabs */}
-                    <div className="flex bg-zinc-200/60 p-1 rounded-lg gap-1 border border-zinc-200 overflow-x-auto no-scrollbar max-w-full">
+                  <div className="flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-3 bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    {/* Mobile / Zoom Dropdown for Status Filter */}
+                    <div className="2xl:hidden w-full">
+                      <select
+                        value={selectedStatusFilter}
+                        onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-2xs focus:outline-hidden cursor-pointer"
+                      >
+                        {["All", "Published", "Drafts", "In Review", "Approved", "Rejected", "Archived"].map((tab) => (
+                          <option key={tab} value={tab}>
+                            Status: {tab}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Desktop Tabs */}
+                    <div className="hidden 2xl:flex bg-zinc-200/60 p-1 rounded-lg gap-1 border border-zinc-200 overflow-x-auto no-scrollbar shrink-0">
                       {["All", "Published", "Drafts", "In Review", "Approved", "Rejected", "Archived"].map((tab) => (
                         <button
                           key={tab}
@@ -1747,12 +1762,12 @@ export default function AdminDeskWorkspace({
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                    <div className="flex items-center gap-2.5 flex-wrap w-full 2xl:w-auto">
                       {/* Category Dropdown */}
                       <select
                         value={selectedCategoryFilter}
                         onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
                       >
                         <option value="All Categories">All Categories</option>
                         {categoriesList.map((c) => (
@@ -1770,7 +1785,7 @@ export default function AdminDeskWorkspace({
                           setArticleSort(field);
                           setArticleSortDir(dir);
                         }}
-                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
                       >
                         <option value="updated_at:desc">Last Updated ↓</option>
                         <option value="updated_at:asc">Last Updated ↑</option>
@@ -1790,7 +1805,7 @@ export default function AdminDeskWorkspace({
                       <select
                         value={selectedHelpfulFilter}
                         onChange={(e) => setSelectedHelpfulFilter(e.target.value)}
-                        className={`rounded-lg border bg-white px-3 py-1.5 text-xs font-bold focus:outline-hidden cursor-pointer ${selectedHelpfulFilter !== "All" ? "border-cyan-400 text-cyan-700" : "border-zinc-200 text-zinc-700"}`}
+                        className={`flex-1 sm:flex-none min-w-[110px] rounded-lg border bg-white px-3 py-1.5 text-xs font-bold focus:outline-hidden cursor-pointer ${selectedHelpfulFilter !== "All" ? "border-cyan-400 text-cyan-700" : "border-zinc-200 text-zinc-700"}`}
                       >
                         <option value="All">All Ratings</option>
                         <option value="high">≥ 80% Helpful</option>
@@ -1805,7 +1820,7 @@ export default function AdminDeskWorkspace({
                         placeholder="Search titles or IDs..."
                         value={searchKeyword}
                         onChange={(e) => setSearchKeyword(e.target.value)}
-                        className="rounded-lg border border-zinc-200 bg-white px-3.5 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 focus:border-zinc-950 focus:outline-hidden transition-all shadow-2xs w-48 sm:w-60"
+                        className="flex-1 sm:flex-none min-w-[160px] sm:w-52 rounded-lg border border-zinc-200 bg-white px-3.5 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 focus:border-zinc-950 focus:outline-hidden transition-all shadow-2xs"
                       />
                     </div>
                   </div>
@@ -1818,26 +1833,28 @@ export default function AdminDeskWorkspace({
                           {(() => {
                             const SortTh = ({ field, label, className }: { field: typeof articleSort; label: string; className?: string }) => (
                               <th
-                                className={`p-4 cursor-pointer select-none hover:text-zinc-700 transition-colors ${articleSort === field ? "text-zinc-900" : ""} ${className || ""}`}
+                                className={`p-4 whitespace-nowrap cursor-pointer select-none hover:text-zinc-700 transition-colors ${articleSort === field ? "text-zinc-900" : ""} ${className || ""}`}
                                 onClick={() => toggleSort(field)}
                               >
-                                <span className="inline-flex items-center gap-1">
-                                  {label}
-                                  {articleSort === field ? (articleSortDir === "asc" ? " ↑" : " ↓") : " ↕"}
+                                <span className="inline-flex items-center whitespace-nowrap gap-1">
+                                  <span>{label}</span>
+                                  <span className="shrink-0 text-[11px] leading-none">
+                                    {articleSort === field ? (articleSortDir === "asc" ? "↑" : "↓") : "↕"}
+                                  </span>
                                 </span>
                               </th>
                             );
                             return (
                               <tr className="bg-zinc-50/60 border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-extrabold tracking-wider border-l-[3px] border-l-transparent">
-                                <th className="p-4">ID</th>
+                                <th className="p-4 whitespace-nowrap">ID</th>
                                 <SortTh field="title" label="Title" />
                                 <SortTh field="category" label="Category" />
-                                <th className="p-4">Lang</th>
+                                <th className="p-4 whitespace-nowrap">Lang</th>
                                 <SortTh field="status" label="Status" />
                                 <SortTh field="views" label="Views" />
                                 <SortTh field="helpfulRate" label="Helpful %" />
                                 <SortTh field="updated_at" label="Updated" />
-                                <th className="p-4 text-right">Actions</th>
+                                <th className="p-4 text-right whitespace-nowrap">Actions</th>
                               </tr>
                             );
                           })()}
@@ -1911,11 +1928,10 @@ export default function AdminDeskWorkspace({
                                   </td>
                                   <td className="p-4">
                                     {art.helpfulRate !== null && art.helpfulRate !== undefined ? (
-                                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-                                        art.helpfulRate >= 80 ? "bg-green-50 text-green-700 border-green-200"
+                                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${art.helpfulRate >= 80 ? "bg-green-50 text-green-700 border-green-200"
                                         : art.helpfulRate >= 60 ? "bg-amber-50 text-amber-700 border-amber-200"
-                                        : "bg-red-50 text-red-600 border-red-200"
-                                      }`}>
+                                          : "bg-red-50 text-red-600 border-red-200"
+                                        }`}>
                                         {art.helpfulRate}%
                                         <span className="text-[9px] font-medium opacity-70">({art.totalFeedback})</span>
                                       </span>
@@ -2003,7 +2019,7 @@ export default function AdminDeskWorkspace({
                   {/* Guest Link Modal Overlay from row action */}
                   {activeLinkManagerArticle && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-xs">
-                      <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left">
+                      <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between border-b border-zinc-150 pb-2">
                           <div>
                             <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">
@@ -2152,7 +2168,7 @@ export default function AdminDeskWorkspace({
 
                     {(titleError || slugError || contentError || teamsError || reviewDueError) && (
                       <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                         <div>
                           <p className="text-[10px] font-bold text-red-700 uppercase tracking-wider mb-1.5">Missing required fields</p>
                           <ul className="space-y-0.5">
@@ -2595,35 +2611,43 @@ export default function AdminDeskWorkspace({
                       {/* Variant Selection Tabs */}
                       <div className="flex border-b border-zinc-200 pb-2 mb-4 gap-2 overflow-x-auto text-left">
                         {[
-                          { id: "default", label: "Default Variant", icon: (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <circle cx="12" cy="12" r="10" />
-                              <line x1="2" y1="12" x2="22" y2="12" />
-                              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                            </svg>
-                          ) },
-                          { id: "agent", label: "Agent Desk", icon: (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                              <circle cx="9" cy="7" r="4" />
-                              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                          ) },
-                          { id: "chatbot", label: "Chatbot", icon: (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <rect x="3" y="11" width="18" height="10" rx="2" />
-                              <circle cx="12" cy="5" r="2" />
-                              <path d="M12 7v4" />
-                              <line x1="8" y1="16" x2="8" y2="16" />
-                              <line x1="16" y1="16" x2="16" y2="16" />
-                            </svg>
-                          ) },
-                          { id: "whatsapp", label: "WhatsApp", icon: (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                            </svg>
-                          ) }
+                          {
+                            id: "default", label: "Default Variant", icon: (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="2" y1="12" x2="22" y2="12" />
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                              </svg>
+                            )
+                          },
+                          {
+                            id: "agent", label: "Agent Desk", icon: (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                              </svg>
+                            )
+                          },
+                          {
+                            id: "chatbot", label: "Chatbot", icon: (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <rect x="3" y="11" width="18" height="10" rx="2" />
+                                <circle cx="12" cy="5" r="2" />
+                                <path d="M12 7v4" />
+                                <line x1="8" y1="16" x2="8" y2="16" />
+                                <line x1="16" y1="16" x2="16" y2="16" />
+                              </svg>
+                            )
+                          },
+                          {
+                            id: "whatsapp", label: "WhatsApp", icon: (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                              </svg>
+                            )
+                          }
                         ].map((tab) => {
                           const isActive = variantTab === tab.id;
                           const isEmpty = isVariantEmpty(tab.id);
@@ -2753,7 +2777,7 @@ export default function AdminDeskWorkspace({
                               title="Redo"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2m18-22l-6 6m6-6l-6-6" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
                               </svg>
                             </button>
 
@@ -2923,9 +2947,13 @@ export default function AdminDeskWorkspace({
                               className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-zinc-150 transition-all text-zinc-600 hover:text-zinc-900 cursor-pointer border border-transparent"
                               title="Numbered List"
                             >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 4h1v3.5M3 7.5h2M3 12.5a1.2 1.2 0 0 1 2.4 0c0 .8-1.2 1.5-1.2 1.5h1.2M3 17.5h2M3 15.5h1.6a1.2 1.2 0 0 1 0 2.4" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6h11M9 12h11M9 18h11" />
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                                <g strokeWidth={1.2}>
+                                  <path d="M3.8 5.2L5 4v4M3.8 8h2.4" />
+                                  <path d="M3.8 11.2a1.4 1.4 0 0 1 2.8 0c0 1.2-2.8 2.8-2.8 2.8h2.8" />
+                                  <path d="M3.8 16h2.8l-1.4 2a1.4 1.4 0 1 1-1.2 2" />
+                                </g>
+                                <path strokeWidth={2} d="M9.5 6h11M9.5 12h11M9.5 18h11" />
                               </svg>
                             </button>
                             <button
@@ -3202,8 +3230,8 @@ export default function AdminDeskWorkspace({
                     type="button"
                     onClick={() => setWorkflowSubTab("queue")}
                     className={`px-5 py-2.5 text-xs font-bold border-b-2 transition-all shrink-0 ${workflowSubTab === "queue"
-                        ? "border-zinc-900 text-zinc-900"
-                        : "border-transparent text-zinc-450 hover:text-zinc-700"
+                      ? "border-zinc-900 text-zinc-900"
+                      : "border-transparent text-zinc-450 hover:text-zinc-700"
                       }`}
                   >
                     Review Queue
@@ -3215,8 +3243,8 @@ export default function AdminDeskWorkspace({
                       setEditingWorkflow(null);
                     }}
                     className={`px-5 py-2.5 text-xs font-bold border-b-2 transition-all shrink-0 ${workflowSubTab === "builder"
-                        ? "border-zinc-900 text-zinc-900"
-                        : "border-transparent text-zinc-450 hover:text-zinc-700"
+                      ? "border-zinc-900 text-zinc-900"
+                      : "border-transparent text-zinc-450 hover:text-zinc-700"
                       }`}
                   >
                     Custom Workflows Builder
@@ -3248,7 +3276,7 @@ export default function AdminDeskWorkspace({
                       <div className="flex flex-col items-center justify-center py-16 text-center">
                         <div className="h-12 w-12 rounded-2xl bg-zinc-100 flex items-center justify-center mb-3">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
                           </svg>
                         </div>
                         <p className="text-sm font-bold text-zinc-500">All clear!</p>
@@ -4998,7 +5026,7 @@ export default function AdminDeskWorkspace({
                         accent: "from-blue-500 to-blue-400",
                         icon: (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                           </svg>
                         ),
                       },
@@ -5009,7 +5037,7 @@ export default function AdminDeskWorkspace({
                         accent: "from-violet-500 to-violet-400",
                         icon: (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                           </svg>
                         ),
                       },
@@ -5020,7 +5048,7 @@ export default function AdminDeskWorkspace({
                         accent: "from-emerald-500 to-emerald-400",
                         icon: (
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
                           </svg>
                         ),
                       },
@@ -5139,7 +5167,7 @@ export default function AdminDeskWorkspace({
                             <div className="flex items-center gap-2">
                               <div className="relative flex-1">
                                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                                 </svg>
                                 <input
                                   type="text"
@@ -5229,7 +5257,7 @@ export default function AdminDeskWorkspace({
                             <div className="flex items-center gap-2">
                               <div className="relative flex-1">
                                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                                 </svg>
                                 <input
                                   type="text"

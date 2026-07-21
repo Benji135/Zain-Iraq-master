@@ -444,7 +444,7 @@ export default function AgentArticleClient({
       </div>
       {showCommentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left">
+          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl space-y-4 text-left max-h-[90vh] overflow-y-auto">
             <div>
               <h3 className="text-sm font-extrabold text-zinc-955">Flag Article: Missing Info</h3>
               <p className="text-xs text-zinc-500 font-semibold mt-1">

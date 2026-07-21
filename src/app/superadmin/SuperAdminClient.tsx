@@ -799,10 +799,10 @@ export default function SuperAdminClient({
                           <table className="w-full text-xs text-zinc-800 text-left border-collapse">
                             <thead>
                               <tr className="border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-bold">
-                                <th className="py-2.5 px-4">#</th>
-                                <th className="py-2.5 px-4">Article</th>
-                                <th className="py-2.5 px-4">Views</th>
-                                <th className="py-2.5 px-4 text-right">Helpful</th>
+                                <th className="py-2.5 px-4 whitespace-nowrap">#</th>
+                                <th className="py-2.5 px-4 whitespace-nowrap">Article</th>
+                                <th className="py-2.5 px-4 whitespace-nowrap">Views</th>
+                                <th className="py-2.5 px-4 text-right whitespace-nowrap">Helpful</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
@@ -842,9 +842,9 @@ export default function SuperAdminClient({
                           <table className="w-full text-xs text-zinc-800 text-left border-collapse">
                             <thead>
                               <tr className="border-b border-zinc-100 text-zinc-400 uppercase text-[10px] font-bold">
-                                <th className="py-2.5 px-4">Query</th>
-                                <th className="py-2.5 px-4">Confidence</th>
-                                <th className="py-2.5 px-4 text-right">Date</th>
+                                <th className="py-2.5 px-4 whitespace-nowrap">Query</th>
+                                <th className="py-2.5 px-4 whitespace-nowrap">Confidence</th>
+                                <th className="py-2.5 px-4 text-right whitespace-nowrap">Date</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100">

@@ -2615,12 +2615,12 @@ export default function AgentDeskWorkspace({
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 z-10">
                     <tr className="border-b border-zinc-100 bg-zinc-50">
-                      <th className="px-6 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 w-[28%]">Search Query</th>
-                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 w-[25%]">Your Feedback</th>
-                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400">Hits</th>
-                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400">Status</th>
-                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400">Claimed By</th>
-                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400">Resolution</th>
+                      <th className="px-6 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 w-[28%] whitespace-nowrap">Search Query</th>
+                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 w-[25%] whitespace-nowrap">Your Feedback</th>
+                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 whitespace-nowrap">Hits</th>
+                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 whitespace-nowrap">Status</th>
+                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 whitespace-nowrap">Claimed By</th>
+                      <th className="px-4 py-3 font-bold text-[10px] uppercase tracking-widest text-zinc-400 whitespace-nowrap">Resolution</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
