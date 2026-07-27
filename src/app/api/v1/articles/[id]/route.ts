@@ -600,6 +600,104 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 }
 
+// PATCH: Roll back an article to the state captured in a prior audit log entry
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    const session = await auth();
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { role, tenant_id: sessionTenantId, id: userId } = session.user;
+    if (role !== "Admin" && role !== "SuperAdmin") {
+      return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 });
+    }
+
+    // SuperAdmin may roll back articles from any tenant — resolve the article's actual tenant first.
+    let tenantId = sessionTenantId;
+    if (role === "SuperAdmin") {
+      const raw = await prisma.article.findFirst({ where: { id }, select: { tenant_id: true } });
+      if (!raw) {
+        return NextResponse.json({ error: "Article not found" }, { status: 404 });
+      }
+      tenantId = raw.tenant_id;
+    }
+
+    const db = getTenantDb(tenantId);
+
+    const body = await req.json();
+    const { audit_log_id } = body;
+    if (!audit_log_id) {
+      return NextResponse.json({ error: "audit_log_id is required" }, { status: 400 });
+    }
+
+    // Load the snapshot from the audit log itself rather than trusting a client-supplied
+    // article state, so a rollback can only ever restore a state the system actually recorded.
+    const logEntry = await db.auditLog.findFirst({
+      where: { id: audit_log_id, target_id: id, target_type: "Article" },
+    });
+
+    if (!logEntry || !logEntry.before) {
+      return NextResponse.json({ error: "No prior state found for this audit entry" }, { status: 404 });
+    }
+
+    const currentArticle = await db.article.findFirst({ where: { id } });
+    if (!currentArticle) {
+      return NextResponse.json({ error: "Article not found" }, { status: 404 });
+    }
+
+    const snapshot = logEntry.before as Record<string, any>;
+
+    const restored = await db.article.update({
+      where: { id },
+      data: {
+        title: snapshot.title ?? undefined,
+        slug: snapshot.slug ?? undefined,
+        category_id: snapshot.category_id ?? undefined,
+        language: snapshot.language ?? undefined,
+        visibility: snapshot.visibility ?? undefined,
+        status: snapshot.status ?? undefined,
+        owner_id: snapshot.owner_id ?? undefined,
+        review_due: snapshot.review_due ? new Date(snapshot.review_due) : null,
+        published_at: snapshot.published_at ? new Date(snapshot.published_at) : null,
+        workflow_route_id: snapshot.workflow_route_id ?? null,
+        current_step_id: snapshot.current_step_id ?? null,
+      },
+    });
+
+    if (snapshot.status && snapshot.status !== currentArticle.status) {
+      await db.articleStatusHistory.create({
+        data: {
+          article_id: id,
+          from_status: currentArticle.status,
+          to_status: snapshot.status,
+          actor_id: userId,
+          comment: `Rolled back via audit log entry (${logEntry.action})`,
+        },
+      });
+    }
+
+    await db.auditLog.create({
+      data: {
+        tenant_id: tenantId,
+        actor_id: userId,
+        action: "Rollback Article",
+        target_type: "Article",
+        target_id: id,
+        target_label: `Article Rolled Back: ${restored.title}`,
+        before: currentArticle as any,
+        after: restored as any,
+      },
+    });
+
+    return NextResponse.json(restored);
+  } catch (error: any) {
+    console.error("PATCH Article Rollback Error:", error);
+    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+  }
+}
+
 // DELETE: Delete an article
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   try {

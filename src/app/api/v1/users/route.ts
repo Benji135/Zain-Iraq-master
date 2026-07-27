@@ -13,14 +13,26 @@ export async function GET(req: NextRequest) {
 
     const { role, tenant_id } = session.user;
 
+    // Never expose password_hash to any client — select fields explicitly.
+    const userSelect = {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      tenant_id: true,
+      created_at: true,
+      updated_at: true,
+    } as const;
+
     // SuperAdmin can view all users, Admin can view users of their own tenant
     if (role === "SuperAdmin") {
       const users = await prisma.user.findMany({
         orderBy: { created_at: "desc" },
-        include: {
-          tenant: {
-            select: { name: true, slug: true },
-          },
+        select: {
+          ...userSelect,
+          tenant: { select: { name: true, slug: true } },
+          user_teams: { select: { team: { select: { id: true, name: true } } } },
         },
       });
       return NextResponse.json(users);
@@ -28,6 +40,10 @@ export async function GET(req: NextRequest) {
       const db = getTenantDb(tenant_id);
       const users = await db.user.findMany({
         orderBy: { created_at: "desc" },
+        select: {
+          ...userSelect,
+          user_teams: { select: { team: { select: { id: true, name: true } } } },
+        },
       });
       return NextResponse.json(users);
     } else {
@@ -58,6 +74,19 @@ export async function POST(req: NextRequest) {
 
     if (!name || !email || !password || !targetRole) {
       return NextResponse.json({ error: "Name, Email, Password, and Role are required" }, { status: 400 });
+    }
+
+    // Validate the requested role against the enum so a bogus value can't reach Prisma (500).
+    if (!Object.values(UserRole).includes(targetRole as UserRole)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    // Privilege ceiling: an Admin may only create Agent/Admin accounts, never SuperAdmin.
+    if (role === "Admin" && targetRole === UserRole.SuperAdmin) {
+      return NextResponse.json(
+        { error: "Forbidden: Admins cannot create SuperAdmin accounts." },
+        { status: 403 }
+      );
     }
 
     // Determine target tenant: Admin is restricted to their own tenant, SuperAdmin can select
@@ -119,10 +148,11 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // Write audit log entry
+    // Write audit log entry scoped to the created user's tenant (not the actor's), so a
+    // SuperAdmin provisioning into OODI logs it under OODI rather than Zain.
     await prisma.auditLog.create({
       data: {
-        tenant_id: adminTenantId,
+        tenant_id: finalTenantId,
         actor_id: adminUserId,
         action: "Invite User",
         target_type: "User",

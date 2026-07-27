@@ -7,6 +7,24 @@ import { parseMarkdownToHtml } from "@/lib/markdown";
 import CustomerSearchWorkspace from "@/components/CustomerSearchWorkspace";
 import { useToast } from "@/components/ToastProvider";
 
+/** Strip markdown/HTML syntax down to plain text for places that render raw article lines. */
+function stripToPlainText(raw: string): string {
+  return raw
+    .replace(/<a\b[^>]*>(.*?)<\/a>/gi, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/#{1,6}\s*/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 type AgentCase = {
   id: string;
   customer_name: string;
@@ -107,7 +125,8 @@ export default function AgentDeskWorkspace({
   const [searchStartDate, setSearchStartDate] = useState("");
   const [searchEndDate, setSearchEndDate] = useState("");
 
-  // Pinned articles states
+  // Pinned articles states — storage key scoped per user+tenant (TC11)
+  const pinsStorageKey = `pinned_articles:${tenantId}:${currentUserId}`;
   const [pinnedArticleIds, setPinnedArticleIds] = useState<string[]>([]);
   const [publishedArticles, setPublishedArticles] = useState<any[]>([]);
   // Targeted notifications state (TC13)
@@ -231,9 +250,10 @@ export default function AgentDeskWorkspace({
     fetchNotifications();
     loadMyArticles();
 
-    // Load from local storage
+    // Load from local storage, scoped per user+tenant so pins don't leak between
+    // accounts sharing a workstation (TC11).
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("pinned_articles");
+      const saved = localStorage.getItem(pinsStorageKey);
       if (saved) {
         try {
           setPinnedArticleIds(JSON.parse(saved));
@@ -253,8 +273,8 @@ export default function AgentDeskWorkspace({
       updated = [...pinnedArticleIds, articleId];
     }
     setPinnedArticleIds(updated);
-    localStorage.setItem("pinned_articles", JSON.stringify(updated));
-    if (!updated.includes(pinnedPreview?.id)) setPinnedPreview(null);
+    localStorage.setItem(pinsStorageKey, JSON.stringify(updated));
+    if (pinnedPreview && !updated.includes(pinnedPreview.id)) setPinnedPreview(null);
   };
 
   const handleOpenPinnedPreview = async (articleId: string) => {
@@ -1237,11 +1257,13 @@ export default function AgentDeskWorkspace({
                       const steps = detailedSteps
                         .split("\n")
                         .filter((line: string) => /^\s*\d+[\.\)]/.test(line))
-                        .map((line: string) => line.replace(/^\s*\d+[\.\)]\s*/, "").trim())
+                        .map((line: string) => stripToPlainText(line.replace(/^\s*\d+[\.\)]\s*/, "").trim()))
                         .filter(Boolean);
-                      const internalNote = detailedSteps.split("\n").find(
-                        (l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l)
-                      ) || "";
+                      const internalNote = stripToPlainText(
+                        detailedSteps.split("\n").find(
+                          (l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l)
+                        ) || ""
+                      );
 
                       return (
                         <div className="space-y-4">
@@ -1734,7 +1756,7 @@ export default function AgentDeskWorkspace({
                       return (
                         <a
                           key={id}
-                          href={`/articles/${id}`}
+                          href={`/agent/articles/${id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center justify-between gap-3 py-3 group hover:bg-zinc-50 -mx-5 px-5 transition-colors"
@@ -1767,10 +1789,10 @@ export default function AgentDeskWorkspace({
         const avatarColors = ["bg-violet-500","bg-blue-500","bg-emerald-500","bg-rose-500","bg-amber-500","bg-cyan-500"];
         const sessionColor = (id: string) => avatarColors[id.charCodeAt(id.length - 1) % avatarColors.length];
         return (
-        <div className="flex rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-sm text-left -mx-2" style={{ height: "calc(100vh - 9rem)" }}>
+        <div className="flex rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-sm text-left -mx-2" style={{ height: "calc(100dvh - 9rem)", minHeight: "480px" }}>
 
           {/* ── Col 1: Conversation list ── */}
-          <div className={`w-full lg:w-72 shrink-0 flex flex-col border-r border-zinc-100 bg-zinc-50/40 ${
+          <div className={`w-full lg:w-60 xl:w-72 shrink-0 flex flex-col border-r border-zinc-100 bg-zinc-50/40 ${
             activeChatSessionId !== null ? "hidden lg:flex" : "flex"
           }`}>
             {/* Sidebar header */}
@@ -1898,7 +1920,7 @@ export default function AgentDeskWorkspace({
                               {activeSession.avatar}
                             </div>
                           )}
-                          <div className={`max-w-[65%] ${isAgent ? "items-end" : "items-start"} flex flex-col gap-1`}>
+                          <div className={`max-w-[85%] sm:max-w-[70%] ${isAgent ? "items-end" : "items-start"} flex flex-col gap-1`}>
                             <div className={`rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
                               isAgent
                                 ? "bg-zinc-900 text-white rounded-br-sm"
@@ -1948,7 +1970,7 @@ export default function AgentDeskWorkspace({
           </div>
 
           {/* ── Col 3: KB Assistant ── */}
-          <div className={`w-full lg:w-[420px] shrink-0 flex flex-col border-l border-zinc-200 bg-white ${
+          <div className={`w-full lg:w-[330px] xl:w-[400px] shrink-0 flex flex-col border-l border-zinc-200 bg-white ${
             mobileShowKb ? "flex" : "hidden lg:flex"
           }`}>
 
@@ -2196,11 +2218,13 @@ export default function AgentDeskWorkspace({
               const steps = detailedSteps
                 .split("\n")
                 .filter((l: string) => /^\s*\d+[\.\)]/.test(l))
-                .map((l: string) => l.replace(/^\s*\d+[\.\)]\s*/, "").trim())
+                .map((l: string) => stripToPlainText(l.replace(/^\s*\d+[\.\)]\s*/, "").trim()))
                 .filter(Boolean);
-              const internalNote = detailedSteps
-                .split("\n")
-                .find((l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l) && l.trim().length > 20) || "";
+              const internalNote = stripToPlainText(
+                detailedSteps
+                  .split("\n")
+                  .find((l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l) && l.trim().length > 20) || ""
+              );
 
               return (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -2983,7 +3007,7 @@ export default function AgentDeskWorkspace({
                     if (confirm("Unpin all articles?")) {
                       setPinnedArticleIds([]);
                       setPinnedPreview(null);
-                      localStorage.removeItem("pinned_articles");
+                      localStorage.removeItem(pinsStorageKey);
                     }
                   }}
                   className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors"

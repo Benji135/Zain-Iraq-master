@@ -10,12 +10,33 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Intermediate palette steps used throughout the Admin / Agent / Super Admin desks.
+     These are NOT part of Tailwind's default scale, so without registering them the
+     ~100 `zinc-150 / zinc-650 / red-650 / ...` utilities compiled to nothing — dropping
+     borders and focus rings and leaving the same shared components rendering differently
+     across roles. Registered once here so every surface resolves them identically. */
+  --color-zinc-150: #ececee;
+  --color-zinc-250: #dcdcdf;
+  --color-zinc-350: #bbbbc1;
+  --color-zinc-450: #898992;
+  --color-zinc-455: #86868f;
+  --color-zinc-550: #61616b;
+  --color-zinc-650: #494950;
+  --color-zinc-850: #1f1f23;
+  --color-zinc-855: #1d1d21;
+  --color-zinc-955: #050506;
+  --color-red-650: #cd2121;
+  --color-green-650: #158f44;
+  --color-amber-850: #853a0d;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Use the configured Geist family (falls back to system sans) so every surface — the
+     agent desk included — renders in the same typeface instead of defaulting to Arial. */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

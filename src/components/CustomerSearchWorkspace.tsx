@@ -79,6 +79,10 @@ export default function CustomerSearchWorkspace({
   const [gapSubmitting, setGapSubmitting] = useState(false);
   const [gapDone, setGapDone] = useState(false);
 
+  // Search filters (TC6: category + language, with clear)
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterLanguage, setFilterLanguage] = useState<"" | "en" | "ar">("");
+
   // Filter categories by the active tenant
   const activeCategories = initialCategories.filter((c) => c.tenant_id === selectedTenant?.id);
   const brandingColor = selectedTenant?.branding?.primaryColor || "#09090B";
@@ -104,6 +108,8 @@ export default function CustomerSearchWorkspace({
     setEscalation(null);
     setFeedbackText("");
     setFeedbackSubmitted(false);
+    setFilterCategory("");
+    setFilterLanguage("");
   }, [selectedTenant]);
 
   const triggerSearch = async (searchQuery: string) => {
@@ -123,8 +129,12 @@ export default function CustomerSearchWorkspace({
         },
         body: JSON.stringify({
           query: searchQuery.trim(),
-          language: "en",
+          language: filterLanguage || undefined,
           channel: "default",
+          filters: {
+            ...(filterCategory ? { category_id: filterCategory } : {}),
+            ...(filterLanguage ? { language: filterLanguage } : {}),
+          },
         }),
       });
 
@@ -499,6 +509,54 @@ export default function CustomerSearchWorkspace({
             {searching ? "Searching..." : "Search"}
           </button>
         </form>
+
+        {/* Search filters (TC6: category + language, with clear) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="cust-filter-category">Filter by category</label>
+          <select
+            id="cust-filter-category"
+            value={filterCategory}
+            onChange={(e) => {
+              setFilterCategory(e.target.value);
+              if (query.trim()) triggerSearch(query);
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
+          >
+            <option value="">All categories</option>
+            {activeCategories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          <label className="sr-only" htmlFor="cust-filter-language">Filter by language</label>
+          <select
+            id="cust-filter-language"
+            value={filterLanguage}
+            onChange={(e) => {
+              setFilterLanguage(e.target.value as "" | "en" | "ar");
+              if (query.trim()) triggerSearch(query);
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
+          >
+            <option value="">All languages</option>
+            <option value="en">English</option>
+            <option value="ar">العربية</option>
+          </select>
+
+          {(filterCategory || filterLanguage) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterCategory("");
+                setFilterLanguage("");
+                if (query.trim()) triggerSearch(query);
+              }}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-500 hover:text-zinc-900 hover:border-zinc-300 transition-all"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
 
         {/* Categories Pills */}
         <div className="flex flex-wrap gap-2 justify-center">

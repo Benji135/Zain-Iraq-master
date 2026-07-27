@@ -335,6 +335,21 @@ async function main() {
     });
   }
 
+  // The OODI Admin must belong to a team, otherwise article creation (which requires the
+  // author to belong to every assigned team) fails with a 403 for the whole OODI org.
+  const adminOodiTeamExists = await prisma.userTeam.findFirst({
+    where: { user_id: adminOodi.id, team_id: teamOodi.id }
+  });
+  if (!adminOodiTeamExists) {
+    await prisma.userTeam.create({
+      data: {
+        user_id: adminOodi.id,
+        team_id: teamOodi.id,
+        tenant_id: oodiTenant.id,
+      },
+    });
+  }
+
   console.log("Teams and mapping verified.");
 
   // 6. Seed categories and articles for Zain from JSON file

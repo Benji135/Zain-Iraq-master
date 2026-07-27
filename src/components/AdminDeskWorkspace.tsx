@@ -3280,7 +3280,7 @@ export default function AdminDeskWorkspace({
                             )}
 
                             {/* Word Counter */}
-                            <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-zinc-100 text-[10px] font-bold text-zinc-450 shadow-3xs select-none">
+                            <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-zinc-100 text-[10px] font-bold text-zinc-450 shadow-2xs select-none">
                               {(() => {
                                 const activeVal =
                                   variantTab === "default" ? vDefaultDetailed :
@@ -4512,7 +4512,7 @@ export default function AdminDeskWorkspace({
                                         const res = await fetch(`/api/v1/articles/${log.target_id}`, {
                                           method: "PATCH",
                                           headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ ...log.before, _rollback_from_audit: log.id }),
+                                          body: JSON.stringify({ audit_log_id: log.id }),
                                         });
                                         if (res.ok) {
                                           toast("Article restored. Reloading page…", "success");

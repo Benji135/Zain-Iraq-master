@@ -110,13 +110,22 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    // Apply search filters
+    // Apply search filters (TC6: category, language, status, date filtering).
+    // Language may arrive either as the top-level `language` field or inside `filters`.
+    const filterLanguage = filters?.language ?? (language === "ar" || language === "en" ? language : undefined);
+    if (filterLanguage === "ar" || filterLanguage === "en") {
+      whereClause.language = filterLanguage;
+    }
     if (filters) {
       if (filters.category_id) {
         whereClause.category_id = filters.category_id;
       }
       if (filters.author_id) {
         whereClause.author_id = filters.author_id;
+      }
+      // Optional status filter for staff (guests are already pinned to Published above).
+      if (filters.status && searchStatus === undefined) {
+        whereClause.status = filters.status;
       }
       if (filters.date_start || filters.date_end) {
         whereClause.created_at = {};

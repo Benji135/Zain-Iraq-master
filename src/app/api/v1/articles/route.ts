@@ -87,19 +87,25 @@ export async function GET(req: NextRequest) {
     }
     // SuperAdmin: teamFilter stays {} (sees everything)
 
+    // teamFilter and the search OR-clause both use a top-level `OR` key, so they
+    // must be combined via AND rather than spread — spreading would let the later
+    // key silently clobber the earlier one and drop the visibility restriction.
+    const searchFilter = search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { slug: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
+
     const articles = await db.article.findMany({
       where: {
         language: language || undefined,
         category_id: categoryId,
         author_id: authorId,
         status: statusClause,
-        ...teamFilter,
-        OR: search
-          ? [
-              { title: { contains: search, mode: "insensitive" } },
-              { slug: { contains: search, mode: "insensitive" } },
-            ]
-          : undefined,
+        AND: [teamFilter, searchFilter],
       },
       include: {
         category: { select: { id: true, name: true } },
