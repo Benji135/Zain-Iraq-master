@@ -4,7 +4,7 @@ services:
     env: node
     buildCommand: npm install && npx prisma generate && npm run build
     startCommand: npm run start
-    preDeployCommand: node node_modules/prisma/build/index.js migrate deploy
+    preDeployCommand: npx prisma db push
     envVars:
       - key: DATABASE_URL
         fromDatabase:
