@@ -135,10 +135,14 @@ export default function AgentDeskWorkspace({
   const pinsStorageKey = `pinned_articles:${tenantId}:${currentUserId}`;
   const [pinnedArticleIds, setPinnedArticleIds] = useState<string[]>([]);
   const [publishedArticles, setPublishedArticles] = useState<any[]>([]);
-  // Targeted notifications state (TC13)
-  type NotifEntry = { id: string; title: string; message: string; uiType: "info" | "warning" | "success" };
-  const annTypeToUi = (t: string): "info" | "warning" | "success" =>
-    t === "ticker" ? "warning" : t === "broadcast" ? "success" : "info";
+  // Targeted notifications state (TC13).
+  // banner / ticker / broadcast are layout formats, not severities — there is no severity
+  // field on an announcement. Deriving one from the format meant a `broadcast` announcing an
+  // outage rendered as a green success banner with a tick. Tickers and broadcasts are the
+  // interrupting formats, so both read as attention; a plain banner stays informational.
+  type NotifEntry = { id: string; title: string; message: string; uiType: "info" | "warning"; dismissed?: boolean };
+  const annTypeToUi = (t: string): "info" | "warning" =>
+    t === "ticker" || t === "broadcast" ? "warning" : "info";
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
   const [pinnedPreview, setPinnedPreview] = useState<any | null>(null);
   const [loadingPinnedPreview, setLoadingPinnedPreview] = useState(false);
@@ -242,10 +246,19 @@ export default function AgentDeskWorkspace({
     };
     const fetchNotifications = async () => {
       try {
-        const res = await fetch("/api/v1/announcements");
+        const res = await fetch("/api/v1/announcements", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          setNotifications(data.map((a: any) => ({ id: a.id, title: a.title, message: a.body, uiType: annTypeToUi(a.type) })));
+          setNotifications((prev) =>
+            data.map((a: any) => ({
+              id: a.id,
+              title: a.title,
+              message: a.body,
+              uiType: annTypeToUi(a.type),
+              // Don't resurrect a notice the agent already dismissed this session.
+              dismissed: prev.some((p) => p.id === a.id && p.dismissed),
+            }))
+          );
         }
       } catch (e) {
         console.error(e);
@@ -255,6 +268,14 @@ export default function AgentDeskWorkspace({
     fetchPublished();
     fetchNotifications();
     loadMyArticles();
+
+    // Announcements were fetched once on mount only, so an outage notice published while
+    // an agent had the desk open never reached them until they happened to reload — which
+    // defeats the point of a broadcast. Poll, and re-check whenever they return to the tab.
+    const poll = setInterval(fetchNotifications, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") fetchNotifications(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", fetchNotifications);
 
     // Load from local storage, scoped per user+tenant so pins don't leak between
     // accounts sharing a workstation (TC11).
@@ -268,6 +289,12 @@ export default function AgentDeskWorkspace({
         }
       }
     }
+
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", fetchNotifications);
+    };
   }, []);
 
   const handleTogglePin = (articleId: string) => {
@@ -1028,15 +1055,16 @@ export default function AgentDeskWorkspace({
         <div key={agentActiveTab} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 tab-fade-in">
 
           {/* Notifications Banner — backed by Announcements API */}
-          {notifications.length > 0 && (
-            <div className="mb-4 space-y-2 text-left">
-              {notifications.map(n => (
-                <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${n.uiType === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
-                    n.uiType === "success" ? "border-green-200 bg-green-50 text-green-800" :
-                      "border-blue-200 bg-blue-50 text-blue-800"
+          {notifications.some(n => !n.dismissed) && (
+            <div className="mb-4 space-y-2 text-left" role="status" aria-live="polite">
+              {notifications.filter(n => !n.dismissed).map(n => (
+                <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${
+                  n.uiType === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-blue-200 bg-blue-50 text-blue-800"
                   }`}>
                   <div className="flex items-start gap-2">
-                    <span>{n.uiType === "warning" ? "⚠️" : n.uiType === "success" ? "✅" : "ℹ️"}</span>
+                    <span aria-hidden="true">{n.uiType === "warning" ? "⚠️" : "ℹ️"}</span>
                     <div>
                       {n.title && n.title !== n.message.slice(0, 60) && (
                         <p className="font-extrabold mb-0.5">{n.title}</p>
@@ -1044,7 +1072,15 @@ export default function AgentDeskWorkspace({
                       <span>{n.message}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setNotifications(prev => prev.filter(x => x.id !== n.id))} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity font-bold">×</button>
+                  {/* Marked dismissed rather than dropped, so the next poll doesn't bring it back. */}
+                  <button
+                    type="button"
+                    aria-label={`Dismiss notification: ${n.title || n.message.slice(0, 40)}`}
+                    onClick={() => setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, dismissed: true } : x))}
+                    className="shrink-0 rounded opacity-60 hover:opacity-100 transition-opacity font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
