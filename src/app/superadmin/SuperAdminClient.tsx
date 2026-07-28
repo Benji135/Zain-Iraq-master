@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { signOut } from "next-auth/react";
 import AdminDeskWorkspace from "@/components/AdminDeskWorkspace";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/Modal";
 
 interface Tenant {
   id: string;
@@ -65,6 +67,8 @@ export default function SuperAdminClient({
   const [glossarySearch, setGlossarySearch] = useState("");
   const [glossaryCategory, setGlossaryCategory] = useState("All");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<"7d" | "30d" | "90d" | "all">("all");
@@ -222,19 +226,34 @@ export default function SuperAdminClient({
 
   // Handle Delete Team
   const handleDeleteTeam = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this team?")) return;
+    const team = teams.find(t => t.id === id);
+    const ok = await confirm({
+      title: "Delete this team?",
+      message: (
+        <>
+          {team?.name ? <span className="font-semibold text-zinc-900">{team.name}</span> : "This team"}{" "}
+          will be removed. Members stay in the system but lose access to any articles restricted
+          to this team.
+        </>
+      ),
+      confirmLabel: "Delete team",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/v1/teams?id=${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
         setTeams(prev => prev.filter(t => t.id !== id));
+        toast("Team deleted.", "success");
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to delete team");
+        const data = await res.json().catch(() => null);
+        toast(data?.error || "Failed to delete team.", "error");
       }
     } catch (err) {
       console.error(err);
+      toast("Network error — the team was not deleted.", "error");
     }
   };
 
@@ -264,12 +283,14 @@ export default function SuperAdminClient({
           user_teams: data.user_teams,
         } : u));
         setEditingUserTeams(null);
+        toast("Team assignments saved.", "success");
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to save teams");
+        const data = await res.json().catch(() => null);
+        toast(data?.error || "Failed to save team assignments.", "error");
       }
     } catch (err) {
       console.error(err);
+      toast("Network error — team assignments were not saved.", "error");
     } finally {
       setModalSaving(false);
     }
@@ -1013,8 +1034,8 @@ export default function SuperAdminClient({
                     )}
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-zinc-600">Organization Name <span className="text-red-400">*</span></label>
-                      <input
+                      <label htmlFor="superadminclient-organization-name" className="block text-[11px] font-bold text-zinc-600">Organization Name <span className="text-red-400">*</span></label>
+                      <input id="superadminclient-organization-name"
                         type="text"
                         required
                         value={orgName}
@@ -1025,26 +1046,26 @@ export default function SuperAdminClient({
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-zinc-600">
+                      <label htmlFor="superadminclient-url-slug-auto-generated" className="block text-[11px] font-bold text-zinc-600">
                         URL Slug <span className="text-zinc-400 font-normal">(auto-generated)</span>
                       </label>
                       <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 focus-within:border-zinc-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-zinc-900/5 transition-all overflow-hidden">
                         <span className="px-3 py-2.5 text-sm text-zinc-400 border-r border-zinc-200 bg-zinc-100 select-none">/</span>
-                        <input
+                        <input id="superadminclient-url-slug-auto-generated"
                           type="text"
                           required
                           value={orgSlug}
                           onChange={(e) => setOrgSlug(e.target.value)}
-                          className="flex-1 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 bg-transparent focus:outline-none"
+                          className="flex-1 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 bg-transparent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                           placeholder="oodi-iraq"
                         />
                       </div>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-zinc-600">Brand Color</label>
+                      <label htmlFor="superadminclient-brand-color" className="block text-[11px] font-bold text-zinc-600">Brand Color</label>
                       <div className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 focus-within:border-zinc-400 transition-all">
-                        <input
+                        <input id="superadminclient-brand-color"
                           type="color"
                           value={orgColor}
                           onChange={(e) => setOrgColor(e.target.value)}
@@ -1208,8 +1229,8 @@ export default function SuperAdminClient({
                     )}
 
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-zinc-600">Full Name <span className="text-red-400">*</span></label>
-                        <input
+                        <label htmlFor="superadminclient-full-name" className="block text-[11px] font-bold text-zinc-600">Full Name <span className="text-red-400">*</span></label>
+                        <input id="superadminclient-full-name"
                           type="text"
                           required
                           value={newUserName}
@@ -1219,8 +1240,8 @@ export default function SuperAdminClient({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-zinc-600">Email Address <span className="text-red-400">*</span></label>
-                        <input
+                        <label htmlFor="superadminclient-email-address" className="block text-[11px] font-bold text-zinc-600">Email Address <span className="text-red-400">*</span></label>
+                        <input id="superadminclient-email-address"
                           type="email"
                           required
                           value={newUserEmail}
@@ -1230,8 +1251,8 @@ export default function SuperAdminClient({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-zinc-600">Password <span className="text-red-400">*</span></label>
-                        <input
+                        <label htmlFor="superadminclient-password" className="block text-[11px] font-bold text-zinc-600">Password <span className="text-red-400">*</span></label>
+                        <input id="superadminclient-password"
                           type="password"
                           required
                           value={userPassword}
@@ -1241,9 +1262,9 @@ export default function SuperAdminClient({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-bold text-zinc-600">Assigned Organization</label>
+                        <label htmlFor="superadminclient-assigned-organization" className="block text-[11px] font-bold text-zinc-600">Assigned Organization</label>
                         <div className="relative">
-                          <select
+                          <select id="superadminclient-assigned-organization"
                             value={userTenantId}
                             onChange={(e) => setUserTenantId(e.target.value)}
                             className="appearance-none block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 pr-9 text-sm text-zinc-900 outline-none focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
@@ -1263,9 +1284,9 @@ export default function SuperAdminClient({
                       </div>
                       {teams.filter(t => t.tenant_id === userTenantId).length > 0 && (
                         <div className="space-y-1.5">
-                          <label className="block text-[11px] font-bold text-zinc-600">Assign to Team</label>
+                          <label htmlFor="superadminclient-assign-to-team" className="block text-[11px] font-bold text-zinc-600">Assign to Team</label>
                           <div className="relative">
-                            <select
+                            <select id="superadminclient-assign-to-team"
                               value={userSelectedTeams[0] ?? ""}
                               onChange={(e) => setUserSelectedTeams(e.target.value ? [e.target.value] : [])}
                               className="appearance-none block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 pr-9 text-sm text-zinc-900 outline-none focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
@@ -1514,8 +1535,8 @@ export default function SuperAdminClient({
                     )}
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-zinc-600">Team Name <span className="text-red-400">*</span></label>
-                      <input
+                      <label htmlFor="superadminclient-team-name" className="block text-[11px] font-bold text-zinc-600">Team Name <span className="text-red-400">*</span></label>
+                      <input id="superadminclient-team-name"
                         type="text"
                         required
                         value={newTeamName}
@@ -1526,9 +1547,9 @@ export default function SuperAdminClient({
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-zinc-600">Assigned Organization</label>
+                      <label htmlFor="superadminclient-assigned-organization-1" className="block text-[11px] font-bold text-zinc-600">Assigned Organization</label>
                       <div className="relative">
-                        <select
+                        <select id="superadminclient-assigned-organization-1"
                           value={teamTenantId}
                           onChange={(e) => setTeamTenantId(e.target.value)}
                           className="appearance-none block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 pr-9 text-sm text-zinc-900 outline-none focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"

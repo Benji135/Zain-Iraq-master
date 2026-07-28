@@ -359,7 +359,8 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
           )}
 
           <div
-            className="prose prose-zinc max-w-none text-zinc-800 text-sm leading-relaxed whitespace-pre-wrap font-medium"
+            className="prose-article max-w-none text-zinc-800 text-sm leading-relaxed font-medium"
+            dir={article.language === "ar" ? "rtl" : undefined}
             dangerouslySetInnerHTML={{ __html: parseMarkdownToHtml(contentBody) }}
           />
 

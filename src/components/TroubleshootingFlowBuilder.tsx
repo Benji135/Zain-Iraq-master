@@ -205,7 +205,7 @@ export default function TroubleshootingFlowBuilder({ value, onChange }: Props) {
             value={step.text}
             onChange={(e) => updateStep(step.key, { text: e.target.value })}
             placeholder="What question or instruction should the agent/customer see here?"
-            className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-xs text-zinc-850 focus:outline-hidden shadow-inner"
+            className="w-full rounded-lg border border-zinc-200 bg-white p-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 shadow-inner"
           />
 
           <div className="flex items-center gap-4 text-[11px] font-semibold text-zinc-600">
@@ -217,7 +217,7 @@ export default function TroubleshootingFlowBuilder({ value, onChange }: Props) {
               />
               Ask a question with choices
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
+            <label htmlFor="troubleshootingflowbuilder-this-is-a-final-answer" className="flex items-center gap-1.5 cursor-pointer">
               <input
                 type="radio"
                 checked={step.kind !== "question"}
@@ -231,12 +231,12 @@ export default function TroubleshootingFlowBuilder({ value, onChange }: Props) {
             <div className="space-y-2 pl-3 border-l-2 border-zinc-100">
               {step.options.map((opt, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
+                  <input id="troubleshootingflowbuilder-this-is-a-final-answer"
                     type="text"
                     value={opt.label}
                     onChange={(e) => updateOption(step.key, i, { label: e.target.value })}
                     placeholder={`Choice ${i + 1} (e.g. "Yes")`}
-                    className="flex-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden"
+                    className="flex-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                   />
                   <span className="text-[10px] text-zinc-400 font-semibold shrink-0">then go to</span>
                   <select
@@ -245,7 +245,7 @@ export default function TroubleshootingFlowBuilder({ value, onChange }: Props) {
                       if (e.target.value === "__new__") createStepForOption(step.key, i);
                       else updateOption(step.key, i, { target: e.target.value });
                     }}
-                    className="rounded border border-zinc-200 bg-white px-2 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden max-w-[180px]"
+                    className="rounded border border-zinc-200 bg-white px-2 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 max-w-[180px]"
                   >
                     <option value="">— choose a step —</option>
                     <option value="__new__">+ Create a new step</option>
@@ -278,11 +278,11 @@ export default function TroubleshootingFlowBuilder({ value, onChange }: Props) {
             </div>
           ) : (
             <div className="pl-3 border-l-2 border-zinc-100">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-450 block mb-1">Outcome</label>
-              <select
+              <label htmlFor="troubleshootingflowbuilder-outcome" className="text-[10px] font-bold uppercase tracking-wider text-zinc-450 block mb-1">Outcome</label>
+              <select id="troubleshootingflowbuilder-outcome"
                 value={step.kind}
                 onChange={(e) => updateStep(step.key, { kind: e.target.value as "resolve" | "escalate" })}
-                className="rounded border border-zinc-200 bg-white px-2 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden"
+                className="rounded border border-zinc-200 bg-white px-2 py-1.5 text-[11px] text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
               >
                 <option value="resolve">Problem solved — no escalation needed</option>
                 <option value="escalate">Needs escalation to another team</option>

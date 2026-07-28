@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import SearchResultList from "./SearchResultList";
+import ArticleModal from "./ArticleModal";
 
 type Tenant = {
   id: string;
@@ -66,6 +68,9 @@ export default function CustomerSearchWorkspace({
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
+  // Articles open in place so a reader never loses their result list. The standalone
+  // /articles/[id] route still works for direct links and guest shares.
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
   const [suggestedCategories, setSuggestedCategories] = useState<{ id: string; name: string }[]>([]);
   const [gapLogged, setGapLogged] = useState(false);
   const [escalation, setEscalation] = useState<any>(null);
@@ -226,7 +231,7 @@ export default function CustomerSearchWorkspace({
               placeholder={`Search ${selectedTenant?.name || ""} knowledge base…`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
             />
             {query && (
               <button type="button" onClick={() => { setQuery(""); setSearched(false); setResults([]); }} className="text-zinc-300 hover:text-zinc-500 transition-colors">
@@ -397,58 +402,24 @@ export default function CustomerSearchWorkspace({
         {!searching && searched && results.length > 0 && (
           <div className="space-y-3">
             {/* Results header */}
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
-                {results.length} result{results.length !== 1 ? "s" : ""} — ranked by relevance
-              </p>
-              <button
-                type="button"
-                onClick={() => { setSearched(false); setResults([]); setQuery(""); }}
-                className="text-[10px] font-bold text-zinc-400 hover:text-zinc-700 transition-colors"
-              >Clear</button>
-            </div>
-
-            {/* Result cards — 2-col grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-              {results.map((art) => {
-                const isPinned = pinnedArticleIds.includes(art.article_id);
-                return (
-                  <div key={art.article_id} className="group flex flex-col rounded-xl border border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-all">
-                    <Link href={agentMode ? `/agent/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}` : `/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}`} className="flex-1 p-4 space-y-2.5 block">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="rounded-md bg-zinc-50 border border-zinc-200 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-500">
-                          {art.category}
-                        </span>
-                      </div>
-                      <h4 className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 leading-snug transition-colors line-clamp-2">
-                        {art.title}
-                      </h4>
-                    </Link>
-                    <div className="flex items-center justify-between px-4 py-2.5 border-t border-zinc-100">
-                      <span className="text-[9px] font-mono text-zinc-400">{art.language.toUpperCase()} · {art.status}</span>
-                      {onTogglePin && (
-                        <button
-                          type="button"
-                          onClick={() => onTogglePin(art.article_id)}
-                          className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[9px] font-extrabold transition-all ${
-                            isPinned
-                              ? "border-zinc-800 bg-zinc-900 text-white"
-                              : "border-zinc-200 bg-white text-zinc-400 hover:border-zinc-400 hover:text-zinc-700"
-                          }`}
-                        >
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                          </svg>
-                          {isPinned ? "Pinned" : "Pin"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <SearchResultList
+              results={results}
+              pinnedArticleIds={pinnedArticleIds}
+              onOpen={setOpenArticleId}
+              onTogglePin={onTogglePin}
+              onClear={() => { setSearched(false); setResults([]); setQuery(""); }}
+            />
           </div>
         )}
+
+        <ArticleModal
+          articleId={openArticleId}
+          open={openArticleId !== null}
+          onClose={() => setOpenArticleId(null)}
+          initialChannel="agent"
+          staffView
+          fullPageHref={(id) => `/agent/articles/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
+        />
       </div>
     );
   }
@@ -474,7 +445,7 @@ export default function CustomerSearchWorkspace({
                   const found = tenants.find((t) => t.id === e.target.value);
                   if (found) setSelectedTenant(found);
                 }}
-                className="rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-xs font-bold text-zinc-800 focus:outline-hidden transition-all shadow-xs cursor-pointer pr-8 appearance-none"
+                className="rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-xs font-bold text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 transition-all shadow-xs cursor-pointer pr-8 appearance-none"
                 style={{ borderLeft: `4px solid ${brandingColor}` }}
               >
                 {tenants.map((t) => (
@@ -677,56 +648,21 @@ export default function CustomerSearchWorkspace({
           </div>
         ) : (
           /* RESULTS FOUND STATE */
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {results.map((art) => {
-              const isPinned = pinnedArticleIds.includes(art.article_id);
-              return (
-                <div key={art.article_id} className="group rounded-xl border border-zinc-200 bg-white shadow-sm transition-all duration-200 hover:border-zinc-350 hover:-translate-y-0.5 flex flex-col">
-                  <Link
-                    href={agentMode ? `/agent/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}` : `/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
-                    className="block p-6 flex-1 text-left space-y-4"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-zinc-50 px-2 py-0.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border border-zinc-200">
-                        {art.category}
-                      </span>
-                      <span className="rounded bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700 border border-green-200 uppercase">
-                        {art.status}
-                      </span>
-                    </div>
-                    <h4 className="text-sm font-bold text-zinc-950 group-hover:text-zinc-650 transition-colors line-clamp-2 leading-snug">
-                      {art.title}
-                    </h4>
-                  </Link>
-
-                  <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-100 text-[10px] text-zinc-400 font-semibold font-mono">
-                    <span>{art.language?.toUpperCase() || "EN"}</span>
-                    {onTogglePin ? (
-                      <button
-                        type="button"
-                        onClick={() => onTogglePin(art.article_id)}
-                        title={isPinned ? "Unpin article" : "Pin for quick access"}
-                        className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-bold transition-all not-font-mono ${
-                          isPinned
-                            ? "border-zinc-800 bg-zinc-900 text-white"
-                            : "border-zinc-200 bg-white text-zinc-400 hover:border-zinc-400 hover:text-zinc-700"
-                        }`}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                        </svg>
-                        {isPinned ? "Pinned" : "Pin"}
-                      </button>
-                    ) : (
-                      <span>ID: {art.article_id.slice(0, 8)}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <SearchResultList
+            results={results}
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+          />
         )}
       </div>
+
+      <ArticleModal
+        articleId={openArticleId}
+        open={openArticleId !== null}
+        onClose={() => setOpenArticleId(null)}
+        fullPageHref={(id) => `/articles/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
+      />
     </div>
   );
 }

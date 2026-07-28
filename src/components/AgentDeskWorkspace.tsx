@@ -6,6 +6,8 @@ import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 import { parseMarkdownToHtml } from "@/lib/markdown";
 import CustomerSearchWorkspace from "@/components/CustomerSearchWorkspace";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/Modal";
+import ArticleModal from "@/components/ArticleModal";
 
 /** Strip markdown/HTML syntax down to plain text for places that render raw article lines. */
 function stripToPlainText(raw: string): string {
@@ -103,6 +105,10 @@ export default function AgentDeskWorkspace({
   initialTab,
 }: AgentWorkspaceProps) {
   const toast = useToast();
+  // Articles open in place rather than in a new browser tab, so an agent keeps the live
+  // conversation and case context on screen while reading.
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const confirm = useConfirm();
   const [cases, setCases] = useState<AgentCase[]>(initialCases);
   const [activeTab, setActiveTab] = useState<"waiting" | "active" | "resolved">("waiting");
   const [selectedCase, setSelectedCase] = useState<AgentCase | null>(null);
@@ -1322,17 +1328,16 @@ export default function AgentDeskWorkspace({
                     })()}
 
                     <div className="flex items-center gap-3 pt-3 border-t border-zinc-100">
-                      <a
-                        href={`/agent/articles/${resolutionArticle.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-4 py-2 text-xs font-bold text-zinc-700 transition-all"
+                      <button
+                        type="button"
+                        onClick={() => setOpenArticleId(resolutionArticle.id)}
+                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-4 py-2 text-xs font-bold text-zinc-700 transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                       >
                         Open Full Article
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                         </svg>
-                      </a>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleTogglePin(resolutionArticle.id)}
@@ -1379,7 +1384,7 @@ export default function AgentDeskWorkspace({
                               onChange={e => setSearchGapComment(e.target.value)}
                               placeholder="What were you looking for? What search terms did you try? (required)"
                               rows={2}
-                              className="w-full rounded border border-amber-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none"
+                              className="w-full rounded border border-amber-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             />
                             <div className="flex items-center gap-2">
                               <button
@@ -1413,7 +1418,7 @@ export default function AgentDeskWorkspace({
                               onChange={e => setArticleFlagComment(e.target.value)}
                               placeholder="What information is missing or incorrect? (required)"
                               rows={2}
-                              className="w-full rounded border border-red-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none"
+                              className="w-full rounded border border-red-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             />
                             <button
                               type="button"
@@ -1754,21 +1759,20 @@ export default function AgentDeskWorkspace({
                     {pinnedArticleIds.map((id) => {
                       const art = publishedArticles.find((a) => a.id === id);
                       return (
-                        <a
+                        <button
                           key={id}
-                          href={`/agent/articles/${id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-between gap-3 py-3 group hover:bg-zinc-50 -mx-5 px-5 transition-colors"
+                          type="button"
+                          onClick={() => setOpenArticleId(id)}
+                          className="flex w-full items-center justify-between gap-3 py-3 group hover:bg-zinc-50 -mx-5 px-5 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-zinc-900"
                         >
                           <div className="min-w-0">
                             <h5 className="text-xs font-bold text-zinc-900 truncate group-hover:text-zinc-600 transition-colors">{art?.title || `Article ${id.slice(0, 8)}`}</h5>
                             {art?.category?.name && <p className="text-[10px] text-zinc-400 mt-0.5">{art.category.name}</p>}
                           </div>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-300 group-hover:text-zinc-500 shrink-0 transition-colors">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                            <path d="M9 18l6-6-6-6"/>
                           </svg>
-                        </a>
+                        </button>
                       );
                     })}
                   </div>
@@ -1949,7 +1953,7 @@ export default function AgentDeskWorkspace({
                           placeholder="Type a message…"
                           value={chatInputText}
                           onChange={(e) => setChatInputText(e.target.value)}
-                          className="flex-1 bg-transparent text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                          className="flex-1 bg-transparent text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                         />
                       </div>
                       <button
@@ -2036,7 +2040,7 @@ export default function AgentDeskWorkspace({
                         placeholder="Search articles…"
                         value={chatKbQuery}
                         onChange={(e) => setChatKbQuery(e.target.value)}
-                        className="flex-1 bg-transparent text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none"
+                        className="flex-1 bg-transparent text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                       />
                     </div>
                     <button
@@ -2136,8 +2140,8 @@ export default function AgentDeskWorkspace({
                               </div>
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider block">What's missing?</label>
-                              <textarea
+                              <label htmlFor="agentdeskworkspace-what-s-missing" className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider block">What's missing?</label>
+                              <textarea id="agentdeskworkspace-what-s-missing"
                                 value={chatSearchGapComment}
                                 onChange={e => setChatSearchGapComment(e.target.value)}
                                 placeholder="Describe what info was missing or what the correct answer should be…"
@@ -2312,17 +2316,16 @@ export default function AgentDeskWorkspace({
 
                   {/* Footer actions */}
                   <div className="flex items-center gap-2 pt-3 border-t border-zinc-100">
-                    <a
-                      href={`/agent/articles/${chatPreviewArticle.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-700 transition-all"
+                    <button
+                      type="button"
+                      onClick={() => setOpenArticleId(chatPreviewArticle.id)}
+                      className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-700 transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                     >
                       Open Full Article
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                       </svg>
-                    </a>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleTogglePin(chatPreviewArticle.id)}
@@ -2442,7 +2445,7 @@ export default function AgentDeskWorkspace({
               <form onSubmit={handleSubmitGap} className="px-6 py-6 space-y-5">
                 {/* Query text */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1 text-xs font-bold text-zinc-700">
+                  <label htmlFor="agentdeskworkspace-search-query-or-topic" className="flex items-center gap-1 text-xs font-bold text-zinc-700">
                     Search query or topic
                     <span className="text-red-500 ml-0.5">*</span>
                   </label>
@@ -2452,7 +2455,7 @@ export default function AgentDeskWorkspace({
                         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                       </svg>
                     </span>
-                    <input
+                    <input id="agentdeskworkspace-search-query-or-topic"
                       type="text"
                       required
                       placeholder="e.g. turkey roaming packages"
@@ -2467,8 +2470,8 @@ export default function AgentDeskWorkspace({
                 {/* Language + Channel + Occurrences in a row */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">Language</label>
-                    <select
+                    <label htmlFor="agentdeskworkspace-language" className="block text-xs font-bold text-zinc-700">Language</label>
+                    <select id="agentdeskworkspace-language"
                       value={gapForm.language}
                       onChange={(e) => setGapForm((f) => ({ ...f, language: e.target.value }))}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all appearance-none"
@@ -2478,8 +2481,8 @@ export default function AgentDeskWorkspace({
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">Reported channel</label>
-                    <select
+                    <label htmlFor="agentdeskworkspace-reported-channel" className="block text-xs font-bold text-zinc-700">Reported channel</label>
+                    <select id="agentdeskworkspace-reported-channel"
                       value={gapForm.channel}
                       onChange={(e) => setGapForm((f) => ({ ...f, channel: e.target.value }))}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all appearance-none"
@@ -2491,11 +2494,11 @@ export default function AgentDeskWorkspace({
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">
+                    <label htmlFor="agentdeskworkspace-occurrences-times-searched" className="block text-xs font-bold text-zinc-700">
                       Occurrences
                       <span className="ml-1 font-normal text-zinc-400">(times searched)</span>
                     </label>
-                    <input
+                    <input id="agentdeskworkspace-occurrences-times-searched"
                       type="number"
                       min={1}
                       max={9999}
@@ -2508,11 +2511,11 @@ export default function AgentDeskWorkspace({
 
                 {/* Feedback / comment */}
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-zinc-700">
+                  <label htmlFor="agentdeskworkspace-feedback-context-recommended" className="block text-xs font-bold text-zinc-700">
                     Feedback / Context
                     <span className="ml-1 font-normal text-zinc-400">(recommended)</span>
                   </label>
-                  <textarea
+                  <textarea id="agentdeskworkspace-feedback-context-recommended"
                     rows={2}
                     placeholder="What were you looking for? What info was missing? Helps admins understand the gap."
                     value={gapForm.comment}
@@ -2696,17 +2699,16 @@ export default function AgentDeskWorkspace({
                           </td>
                           <td className="px-4 py-4 max-w-[200px]">
                             {gap.resolving_article && gap.resolving_article_id ? (
-                              <a
-                                href={`/articles/${gap.resolving_article_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 font-semibold text-green-700 hover:text-green-900 hover:underline truncate transition-colors"
+                              <button
+                                type="button"
+                                onClick={() => setOpenArticleId(gap.resolving_article_id!)}
+                                className="inline-flex items-center gap-1 font-semibold text-green-700 hover:text-green-900 hover:underline truncate transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
                               >
                                 {gap.resolving_article.title}
                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                                 </svg>
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-zinc-400 italic">Pending</span>
                             )}
@@ -3003,12 +3005,18 @@ export default function AgentDeskWorkspace({
               {pinnedArticleIds.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm("Unpin all articles?")) {
-                      setPinnedArticleIds([]);
-                      setPinnedPreview(null);
-                      localStorage.removeItem(pinsStorageKey);
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Unpin all articles?",
+                      message: `This removes all ${pinnedArticleIds.length} pinned article${pinnedArticleIds.length !== 1 ? "s" : ""} from your quick-access list. The articles themselves are not affected.`,
+                      confirmLabel: "Unpin all",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    setPinnedArticleIds([]);
+                    setPinnedPreview(null);
+                    localStorage.removeItem(pinsStorageKey);
+                    toast("All articles unpinned.", "success");
                   }}
                   className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors"
                 >
@@ -3145,6 +3153,15 @@ export default function AgentDeskWorkspace({
 
         </div>
       </div>
+
+      <ArticleModal
+        articleId={openArticleId}
+        open={openArticleId !== null}
+        onClose={() => setOpenArticleId(null)}
+        initialChannel="agent"
+        staffView
+        fullPageHref={(id) => `/agent/articles/${id}`}
+      />
     </div>
   );
 }

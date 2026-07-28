@@ -457,8 +457,8 @@ export default function AgentArticleClient({
               await submitMissingFeedback(commentText);
             }} className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block mb-1.5">Comments / Feedback</label>
-                <textarea
+                <label htmlFor="agentarticleclient-comments-feedback" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block mb-1.5">Comments / Feedback</label>
+                <textarea id="agentarticleclient-comments-feedback"
                   required
                   rows={4}
                   value={commentText}
