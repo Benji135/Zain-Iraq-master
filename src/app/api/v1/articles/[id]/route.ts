@@ -83,6 +83,21 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Agents are limited to Approved-or-later, so an unreviewed draft cannot be reached by
+    // guessing or keeping a stale link. Their own authored articles remain accessible so the
+    // Draft -> InReview submission they are permitted to make still works.
+    if (
+      session?.user?.role === "Agent" &&
+      article.status !== ArticleStatus.Approved &&
+      article.status !== ArticleStatus.Published &&
+      article.author_id !== session.user.id
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden: This article has not been approved yet." },
+        { status: 403 }
+      );
+    }
+
     // Visibility access control
     const viewer = session?.user;
     if (article.visibility === Visibility.ADMINS) {

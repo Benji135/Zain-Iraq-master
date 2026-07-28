@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import SearchResultList from "./SearchResultList";
 import ArticleModal from "./ArticleModal";
+import PinnedArticlesPanel from "./PinnedArticlesPanel";
 
 type Tenant = {
   id: string;
@@ -306,6 +307,16 @@ export default function CustomerSearchWorkspace({
         )}
         </form>
 
+        {/* Favorites area — available without running a search */}
+        {!searched && onTogglePin && (
+          <PinnedArticlesPanel
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+            defaultOpen
+          />
+        )}
+
         {/* Category pills */}
         {!searched && activeCategories.length > 0 && (
           <div className="space-y-3">
@@ -542,6 +553,18 @@ export default function CustomerSearchWorkspace({
           ))}
         </div>
       </div>
+
+      {/* Favorites area — available without running a search */}
+      {!searched && onTogglePin && (
+        <div className="mb-6">
+          <PinnedArticlesPanel
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+            defaultOpen
+          />
+        </div>
+      )}
 
       {/* Results / Zero Results States */}
       <div className="space-y-6">

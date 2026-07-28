@@ -35,12 +35,30 @@ export async function GET(req: NextRequest) {
     const statusFilter = searchParams.get("status") as ArticleStatus | null;
     const search = searchParams.get("search") || "";
 
-    // Determine status accessibility based on permission matrix:
-    // - Guests see only Published
-    // - Agents/Admins/SuperAdmins can see all statuses (agents see read-only)
+    // Status accessibility:
+    // - Guests: Published only
+    // - Agents: Approved or Published only. Unreviewed and rejected drafts are editorial
+    //   work in progress and must not reach an agent who might quote them to a customer.
+    //   Their own authored articles stay visible at any status, otherwise the
+    //   Draft -> InReview submission they are permitted to make becomes unreachable.
+    // - Admin / SuperAdmin: everything.
+    const AGENT_VISIBLE_STATUSES: ArticleStatus[] = [ArticleStatus.Approved, ArticleStatus.Published];
     let statusClause: any = undefined;
+    let agentStatusScope: any = null;
     if (!session || !userRole) {
       statusClause = ArticleStatus.Published;
+    } else if (userRole === "Agent") {
+      agentStatusScope = {
+        OR: [
+          { status: { in: AGENT_VISIBLE_STATUSES } },
+          { author_id: session.user.id },
+        ],
+      };
+      // A status filter from the UI may only narrow within what the agent may already see.
+      if (statusFilter && AGENT_VISIBLE_STATUSES.includes(statusFilter)) {
+        statusClause = statusFilter;
+        agentStatusScope = null;
+      }
     } else if (statusFilter) {
       statusClause = statusFilter;
     }
@@ -105,7 +123,7 @@ export async function GET(req: NextRequest) {
         category_id: categoryId,
         author_id: authorId,
         status: statusClause,
-        AND: [teamFilter, searchFilter],
+        AND: [teamFilter, searchFilter, ...(agentStatusScope ? [agentStatusScope] : [])],
       },
       include: {
         category: { select: { id: true, name: true } },
