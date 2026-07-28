@@ -6,6 +6,7 @@ import ArticleFeedbackForm from "@/components/ArticleFeedbackForm";
 import CopyMacroButton from "./CopyMacroButton";
 import { ArticleStatus, Channel } from "@prisma/client";
 import { parseMarkdownToHtml } from "@/lib/markdown";
+import { getVideoEmbed } from "@/lib/media";
 import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 
 type PageProps = {
@@ -61,12 +62,13 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
     }
   }
 
-  // - Rule C: If the user is logged in (Agent/Admin/SuperAdmin)
-  if (!hasAccess && user) {
+  // - Rule C: If the user is logged in (Agent/Admin/SuperAdmin), staff-level access to
+  // non-published/restricted content is scoped to their own tenant — SuperAdmin excepted.
+  if (!hasAccess && user && (user.role === "SuperAdmin" || article.tenant_id === user.tenant_id)) {
     if (article.visibility === "ADMINS") {
       hasAccess = user.role === "Admin" || user.role === "SuperAdmin";
     } else if (article.visibility === "AGENTS") {
-      hasAccess = true; // Any logged-in user qualifies
+      hasAccess = true; // Any logged-in same-tenant user qualifies
     } else if (article.visibility === "PRIVATE") {
       if (user.role === "SuperAdmin") {
         hasAccess = true;
@@ -77,7 +79,7 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
         hasAccess = articleTeamIds.some(tid => userTeamIds.includes(tid));
       }
     } else {
-      // PUBLIC — logged-in staff can view any status (Draft, InReview, Approved, etc.)
+      // PUBLIC — logged-in same-tenant staff can view any status (Draft, InReview, Approved, etc.)
       hasAccess = true;
     }
   }
@@ -144,6 +146,11 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
   const contentBody = displayVariant?.detailed_steps || "No content provided.";
   const shortAnswer = displayVariant?.short_answer || "";
   const macroText = displayVariant?.copy_ready_macro || "";
+  const videoLink = displayVariant?.video_link?.trim() || "";
+
+  // YouTube / Vimeo → iframe; direct file → <video>. TC17. Shared with the agent page
+  // and the article modal so a video behaves identically wherever it is opened.
+  const videoEmbed = getVideoEmbed(videoLink);
 
   // Role-scoped back navigation — preserves category and search context
   const catName = article.category?.name;
@@ -329,10 +336,42 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
             </div>
           )}
 
-          <div 
-            className="prose prose-zinc max-w-none text-zinc-800 text-sm leading-relaxed whitespace-pre-wrap font-medium"
+          <div
+            className="prose-article max-w-none text-zinc-800 text-sm leading-relaxed font-medium"
+            dir={article.language === "ar" ? "rtl" : undefined}
             dangerouslySetInnerHTML={{ __html: parseMarkdownToHtml(contentBody) }}
           />
+
+          {videoLink && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">Video Guide</h4>
+              {videoEmbed?.type === "iframe" ? (
+                <div className="relative w-full overflow-hidden rounded-lg border border-zinc-200 bg-black" style={{ aspectRatio: "16 / 9" }}>
+                  <iframe
+                    src={videoEmbed.src}
+                    title="Video guide"
+                    className="absolute inset-0 h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : videoEmbed?.type === "file" ? (
+                <video controls className="w-full rounded-lg border border-zinc-200 bg-black">
+                  <source src={videoEmbed.src} />
+                  Your browser does not support embedded video.
+                </video>
+              ) : (
+                <a
+                  href={videoLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-zinc-50 transition-colors"
+                >
+                  ▶ Watch video guide
+                </a>
+              )}
+            </div>
+          )}
 
           {displayVariant?.troubleshooting_flow != null && (
             <div className="mt-8 border-t border-zinc-100 pt-6 space-y-3">

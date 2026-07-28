@@ -12,6 +12,16 @@ export default auth((req) => {
   const isApiRoute = nextUrl.pathname.startsWith("/api");
   const isAuthRoute = nextUrl.pathname.startsWith("/api/auth") || nextUrl.pathname === "/login";
   
+  // Reading ONE article: GET /api/v1/articles/<id> and nothing else. The page route
+  // /articles/<id> was already public, but the API that backs it was not — so anything
+  // fetching an article client-side (the in-place article modal) failed for logged-out
+  // visitors even on published content. Deliberately excludes the collection endpoint and
+  // sub-resources like /guest-links, and allows GET only. The handler itself still returns
+  // 401 for anything not Published and enforces AGENTS/ADMINS/PRIVATE visibility.
+  const isSingleArticleRead =
+    req.method === "GET" &&
+    /^\/api\/v1\/articles\/[^/]+$/.test(nextUrl.pathname);
+
   // Publicly accessible paths
   const isPublicRoute =
     nextUrl.pathname === "/" ||
@@ -19,7 +29,8 @@ export default auth((req) => {
     nextUrl.pathname.startsWith("/categories") ||
     nextUrl.pathname.startsWith("/api/v1/health") ||
     nextUrl.pathname.startsWith("/api/v1/search") ||
-    nextUrl.pathname.startsWith("/api/v1/feedback");
+    nextUrl.pathname.startsWith("/api/v1/feedback") ||
+    isSingleArticleRead;
 
   // Allow authentication endpoints to go through
   if (isAuthRoute) {

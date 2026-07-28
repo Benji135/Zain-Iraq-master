@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getTenantDb, prisma } from "@/lib/db";
-import { Language, Channel, GapStatus, Visibility } from "@prisma/client";
+import { Language, Channel, GapStatus, Visibility, ArticleStatus } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,9 +35,21 @@ export async function POST(req: NextRequest) {
     const mappedLanguage = language === "ar" ? Language.ar : Language.en;
     const mappedChannel = channel ? (channel as Channel) : Channel.default;
 
-    // Search query in database
-    // Authenticated users (Agent/Admin/SuperAdmin) can search all statuses, guests see Published only
-    const searchStatus = session?.user?.role ? undefined : "Published";
+    // Guests see Published only. Agents are additionally held to Approved-or-later: a draft
+    // that has not cleared review is editorial work in progress, and an agent finding it in
+    // search could quote unapproved guidance to a customer. Their own authored articles stay
+    // searchable so they can still submit them for review. Admin/SuperAdmin search everything.
+    const role = session?.user?.role;
+    const searchStatus = role ? undefined : "Published";
+    const agentStatusScope =
+      role === "Agent"
+        ? {
+            OR: [
+              { status: { in: [ArticleStatus.Approved, ArticleStatus.Published] } },
+              { author_id: session!.user.id },
+            ],
+          }
+        : null;
 
     // Team access filter — enforces visibility tier + optional team restriction
     let teamFilter: any = {};
@@ -107,16 +119,26 @@ export async function POST(req: NextRequest) {
       AND: [
         { OR: searchConditions },
         ...(Object.keys(teamFilter).length > 0 ? [teamFilter] : []),
+        ...(agentStatusScope ? [agentStatusScope] : []),
       ],
     };
 
-    // Apply search filters
+    // Apply search filters (TC6: category, language, status, date filtering).
+    // Language may arrive either as the top-level `language` field or inside `filters`.
+    const filterLanguage = filters?.language ?? (language === "ar" || language === "en" ? language : undefined);
+    if (filterLanguage === "ar" || filterLanguage === "en") {
+      whereClause.language = filterLanguage;
+    }
     if (filters) {
       if (filters.category_id) {
         whereClause.category_id = filters.category_id;
       }
       if (filters.author_id) {
         whereClause.author_id = filters.author_id;
+      }
+      // Optional status filter for staff (guests are already pinned to Published above).
+      if (filters.status && searchStatus === undefined) {
+        whereClause.status = filters.status;
       }
       if (filters.date_start || filters.date_end) {
         whereClause.created_at = {};
@@ -189,8 +211,12 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    // Filter out articles with no meaningful match (score === 0)
-    const filteredResults = results.filter(r => r.match_score > 0);
+    // Hard relevance cutoff. Below this the scorer is matching a stray word rather than
+    // the query's intent — surfacing those made a 25% coincidence look as authoritative as
+    // an exact title hit. A search where everything falls short now returns nothing and is
+    // logged as a knowledge gap, which is the honest outcome and what TC40 asks for.
+    const MIN_RELEVANCE = 0.5;
+    const filteredResults = results.filter(r => r.match_score >= MIN_RELEVANCE);
 
     // Sort results by score desc
     filteredResults.sort((a, b) => b.match_score - a.match_score);

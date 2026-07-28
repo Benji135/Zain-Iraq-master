@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect, notFound } from "next/navigation";
+import { parseMarkdownToHtml } from "@/lib/markdown";
 import AgentArticleClient from "./AgentArticleClient";
 
 type PageProps = {
@@ -28,11 +29,6 @@ function stripMarkdown(raw: string): string {
     .trim();
 }
 
-/** Returns true if a line looks like a nav/link dump (more than 1 URL-looking bracket pair). */
-function isLinkDump(line: string): boolean {
-  const linkCount = (line.match(/\[[^\]]+\]\([^)]+\)/g) || []).length;
-  return linkCount > 1;
-}
 
 export default async function AgentArticlePage({ params, searchParams }: PageProps) {
   const { id } = await params;
@@ -67,28 +63,19 @@ export default async function AgentArticlePage({ params, searchParams }: PagePro
 
   const shortAnswer = stripMarkdown(displayVar?.short_answer ?? "");
   const rawSteps = displayVar?.detailed_steps ?? "";
+  // The macro is pasted straight into a customer conversation, so it stays plain text.
   const copyMacro = stripMarkdown(displayVar?.copy_ready_macro ?? "") || shortAnswer;
   const troubleshootingFlow = displayVar?.troubleshooting_flow ?? null;
 
-  // Split into raw lines, skip blank lines and nav/link dumps
-  const rawLines = rawSteps
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !isLinkDump(l));
-
-  // Numbered steps: lines that start with a digit followed by . or )
-  const numberedSteps = rawLines
-    .filter((l) => /^\d+[\.\)]\s+/.test(l))
-    .map((l) => stripMarkdown(l.replace(/^\d+[\.\)]\s+/, "").trim()))
-    .filter((l) => l.length > 3);
-
-  // Internal note: non-numbered, non-header prose lines — keep only real sentences (≥ 20 chars after stripping)
-  const internalNoteLines = rawLines
-    .filter((l) => !/^\d+[\.\)]\s+/.test(l) && !/^#+/.test(l))
-    .map((l) => stripMarkdown(l))
-    .filter((l) => l.length >= 20);
-  // Use only the first meaningful paragraph to avoid dumping the whole body
-  const internalNote = internalNoteLines.slice(0, 3).join(" ").trim();
+  // Render the article body as written. This page used to regex-split the body into
+  // "numbered steps" (lines starting with a digit) plus an "internal note" (the first
+  // three remaining prose lines) and drop everything else — so headings, bullet lists,
+  // tables, images and any prose past the third line never reached the agent, and plain
+  // article prose was mislabelled as an agents-only internal note. The body now goes
+  // through the same markdown pipeline as the customer page and the article modal.
+  const bodyHtml = rawSteps.trim() ? parseMarkdownToHtml(rawSteps) : "";
+  const imageUrl = displayVar?.image_url?.trim() || "";
+  const videoLink = displayVar?.video_link?.trim() || "";
 
   // Delivery channels — channels that have at least one content field populated
   const channelLabels: Record<string, string> = {
@@ -117,9 +104,10 @@ export default async function AgentArticlePage({ params, searchParams }: PagePro
         categoryId: article.category_id ?? undefined,
         shortAnswer,
         copyMacro,
-        numberedSteps,
+        bodyHtml,
+        imageUrl,
+        videoLink,
         troubleshootingFlow,
-        internalNote,
         deliveryChannels,
         helpfulPct,
         totalFeedback,

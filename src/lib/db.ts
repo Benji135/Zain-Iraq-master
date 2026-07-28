@@ -26,7 +26,23 @@ function getDirectDatabaseUrl(url: string | undefined): string | undefined {
   return url;
 }
 
-const connectionString = getDirectDatabaseUrl(process.env.DATABASE_URL) || "postgresql://postgres:password@localhost:5432/zain_kb";
+const resolvedUrl = getDirectDatabaseUrl(process.env.DATABASE_URL);
+
+// Falling back to localhost in production means an unset DATABASE_URL surfaces as an
+// opaque "can't reach 127.0.0.1:5432" at request time. Fail on the missing variable instead.
+if (!resolvedUrl && process.env.NODE_ENV === "production") {
+  throw new Error("DATABASE_URL is not set");
+}
+
+// pg can't dial the prisma+postgres:// protocol, so a URL that survives getDirectDatabaseUrl
+// unchanged is one whose api_key carried no databaseUrl — say so rather than failing in the pool.
+if (resolvedUrl?.startsWith("prisma+postgres://")) {
+  throw new Error(
+    "DATABASE_URL is a prisma+postgres:// URL with no embedded databaseUrl. Use the direct Postgres connection string."
+  );
+}
+
+const connectionString = resolvedUrl || "postgresql://postgres:password@localhost:5432/zain_kb";
 const isLocalhost = connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
 
 // Create a connection pool and initialize the driver adapter

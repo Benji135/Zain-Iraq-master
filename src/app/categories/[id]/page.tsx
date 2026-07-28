@@ -42,10 +42,13 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
     ? "Back to results"
     : "Knowledge Base";
 
-  // Visibility and status rules mirror the articles list API
-  const statusClause = user ? undefined : ArticleStatus.Published;
-  const teamFilter: any = user
-    ? user.role === "SuperAdmin"
+  // Visibility and status rules mirror the articles list API. Elevated (non-published,
+  // non-public) access only applies within the viewer's own tenant — SuperAdmin excepted —
+  // so staff logged into one org can't browse another org's unpublished/restricted content.
+  const sameTenant = !!user && (user.role === "SuperAdmin" || user.tenant_id === category.tenant_id);
+  const statusClause = sameTenant ? undefined : ArticleStatus.Published;
+  const teamFilter: any = sameTenant
+    ? user!.role === "SuperAdmin"
       ? {}
       : {
           OR: [
@@ -56,7 +59,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
                 some: {
                   team_id: {
                     in: (
-                      await prisma.userTeam.findMany({ where: { user_id: user.id } })
+                      await prisma.userTeam.findMany({ where: { user_id: user!.id } })
                     ).map((ut) => ut.team_id),
                   },
                 },
@@ -67,7 +70,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
     : { visibility: Visibility.PUBLIC };
 
   const articles = await prisma.article.findMany({
-    where: { category_id: id, status: statusClause, ...teamFilter },
+    where: { category_id: id, tenant_id: category.tenant_id, status: statusClause, ...teamFilter },
     include: { author: { select: { name: true } } },
     orderBy: { updated_at: "desc" },
   });

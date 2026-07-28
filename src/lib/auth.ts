@@ -21,23 +21,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = credentials.email as string;
         const password = credentials.password as string;
 
-        // Query unscoped directly from root DB because at login time we don't have the session context yet
-        const user = await prisma.user.findFirst({
+        // email is only unique per-tenant (@@unique([tenant_id, email])), so the same
+        // address can exist in multiple orgs with different passwords/status. Check every
+        // matching row rather than an arbitrary findFirst so login resolves to whichever
+        // account the supplied password actually belongs to.
+        const candidates = await prisma.user.findMany({
           where: { email },
+          include: { tenant: { select: { status: true } } },
         });
 
-        if (!user || !user.password_hash) {
-          return null;
+        let user: (typeof candidates)[number] | null = null;
+        for (const candidate of candidates) {
+          if (candidate.password_hash && bcrypt.compareSync(password, candidate.password_hash)) {
+            user = candidate;
+            break;
+          }
         }
 
-        const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
-
-        if (!isPasswordValid) {
+        if (!user) {
           return null;
         }
 
         if (user.status === "Disabled") {
           throw new Error("Your account has been disabled.");
+        }
+        if (user.status === "Unverified") {
+          throw new Error("Your account has not been activated yet.");
+        }
+        if (user.tenant?.status === "Disabled") {
+          throw new Error("Your organization's access has been disabled.");
         }
 
         return {

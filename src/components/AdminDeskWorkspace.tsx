@@ -6,6 +6,8 @@ import { signOut } from "next-auth/react";
 import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 import TroubleshootingFlowBuilder from "@/components/TroubleshootingFlowBuilder";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/Modal";
+import ArticleModal from "@/components/ArticleModal";
 
 const standardPalette = [
   // Monochrome/Grayscale
@@ -195,6 +197,9 @@ export default function AdminDeskWorkspace({
   const [fullArticleDetail, setFullArticleDetail] = useState<any | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const toast = useToast();
+  const confirm = useConfirm();
+  // Preview an article in place instead of sending the admin out to a new browser tab.
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Per-field validation error states
@@ -1120,7 +1125,13 @@ export default function AdminDeskWorkspace({
   };
 
   const handleDeleteWorkflow = async (id: string) => {
-    if (!confirm("Delete this workflow? Articles using it will lose the route assignment.")) return;
+    const ok = await confirm({
+      title: "Delete this workflow?",
+      message: "Articles currently using this route will lose their step assignment and fall back to the default workflow. This cannot be undone.",
+      confirmLabel: "Delete workflow",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/v1/workflows/${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -1290,7 +1301,26 @@ export default function AdminDeskWorkspace({
   };
 
   const handleDeleteArticle = async (articleId: string) => {
-    if (!confirm("Are you sure you want to permanently delete this article?")) return;
+    const article = articles.find((a: any) => a.id === articleId);
+    const ok = await confirm({
+      title: "Permanently delete this article?",
+      message: (
+        <>
+          {article?.title ? (
+            <>
+              <span className="font-semibold text-zinc-900">{article.title}</span> and all of its
+              content variants, version history, and feedback will be removed.
+            </>
+          ) : (
+            "This article and all of its content variants, version history, and feedback will be removed."
+          )}{" "}
+          This cannot be undone — archive it instead if you may need it later.
+        </>
+      ),
+      confirmLabel: "Delete permanently",
+      destructive: true,
+    });
+    if (!ok) return;
 
     setDeletingArticle(true);
     try {
@@ -1565,6 +1595,25 @@ export default function AdminDeskWorkspace({
                   <button
                     type="button"
                     onClick={() => {
+                      setActiveTab("analytics");
+                      closeEditor();
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`relative group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[11px] font-semibold transition-all duration-200 text-left ${currentTab === "analytics" ? "bg-white/[0.1] text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.06]"
+                      }`}
+                  >
+                    <span className={`absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-amber-400/70 transition-all duration-200 origin-center ${currentTab === "analytics" ? "opacity-100 scale-y-100" : "opacity-0 scale-y-0"
+                      }`} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110 ${currentTab === "analytics" ? "text-amber-400/80" : ""}`}>
+                      <line x1="18" y1="20" x2="18" y2="10" />
+                      <line x1="12" y1="20" x2="12" y2="4" />
+                      <line x1="6" y1="20" x2="6" y2="14" />
+                    </svg>
+                    Analytics
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setActiveTab("alerts");
                       closeEditor();
                       setMobileSidebarOpen(false);
@@ -1754,7 +1803,7 @@ export default function AdminDeskWorkspace({
                       <select
                         value={selectedStatusFilter}
                         onChange={(e) => setSelectedStatusFilter(e.target.value)}
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-2xs focus:outline-hidden cursor-pointer"
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-2xs focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                       >
                         {["All", "Published", "Drafts", "In Review", "Approved", "Rejected", "Archived"].map((tab) => (
                           <option key={tab} value={tab}>
@@ -1786,7 +1835,7 @@ export default function AdminDeskWorkspace({
                       <select
                         value={selectedCategoryFilter}
                         onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                       >
                         <option value="All Categories">All Categories</option>
                         {categoriesList.map((c) => (
@@ -1804,7 +1853,7 @@ export default function AdminDeskWorkspace({
                           setArticleSort(field);
                           setArticleSortDir(dir);
                         }}
-                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden cursor-pointer"
+                        className="flex-1 sm:flex-none min-w-[130px] rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                       >
                         <option value="updated_at:desc">Last Updated ↓</option>
                         <option value="updated_at:asc">Last Updated ↑</option>
@@ -1824,7 +1873,7 @@ export default function AdminDeskWorkspace({
                       <select
                         value={selectedHelpfulFilter}
                         onChange={(e) => setSelectedHelpfulFilter(e.target.value)}
-                        className={`flex-1 sm:flex-none min-w-[110px] rounded-lg border bg-white px-3 py-1.5 text-xs font-bold focus:outline-hidden cursor-pointer ${selectedHelpfulFilter !== "All" ? "border-cyan-400 text-cyan-700" : "border-zinc-200 text-zinc-700"}`}
+                        className={`flex-1 sm:flex-none min-w-[110px] rounded-lg border bg-white px-3 py-1.5 text-xs font-bold focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer ${selectedHelpfulFilter !== "All" ? "border-cyan-400 text-cyan-700" : "border-zinc-200 text-zinc-700"}`}
                       >
                         <option value="All">All Ratings</option>
                         <option value="high">≥ 80% Helpful</option>
@@ -1960,13 +2009,13 @@ export default function AdminDeskWorkspace({
                                   </td>
                                   <td className="p-4 text-zinc-500 font-medium">{formattedDate}</td>
                                   <td className="p-4 text-right space-x-1.5 whitespace-nowrap">
-                                    <Link
-                                      href={`/articles/${art.id}`}
-                                      target="_blank"
-                                      className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs inline-block"
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenArticleId(art.id)}
+                                      className="rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2 py-1 text-[10px] font-bold text-zinc-650 shadow-2xs inline-block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                                     >
                                       View
-                                    </Link>
+                                    </button>
 
                                     {art.status === "Published" && (
                                       <button
@@ -2267,8 +2316,8 @@ export default function AdminDeskWorkspace({
                     {/* Grid Inputs */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                       <div className="space-y-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${titleError ? "text-red-600" : "text-zinc-550"}`}>Title <span className="text-red-500">*</span></label>
-                        <input
+                        <label htmlFor="admindeskworkspace-title" className={`text-[10px] font-bold uppercase tracking-wider block ${titleError ? "text-red-600" : "text-zinc-550"}`}>Title <span className="text-red-500">*</span></label>
+                        <input id="admindeskworkspace-title"
                           type="text"
                           value={title}
                           onChange={(e) => handleTitleChange(e.target.value)}
@@ -2279,8 +2328,8 @@ export default function AdminDeskWorkspace({
                       </div>
 
                       <div className="space-y-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${slugError ? "text-red-600" : "text-zinc-550"}`}>Slug <span className="text-red-500">*</span></label>
-                        <input
+                        <label htmlFor="admindeskworkspace-slug" className={`text-[10px] font-bold uppercase tracking-wider block ${slugError ? "text-red-600" : "text-zinc-550"}`}>Slug <span className="text-red-500">*</span></label>
+                        <input id="admindeskworkspace-slug"
                           type="text"
                           value={slug}
                           onChange={(e) => { setSlug(e.target.value); if (e.target.value.trim()) setSlugError(false); }}
@@ -2300,7 +2349,7 @@ export default function AdminDeskWorkspace({
                               setNewCategoryName("");
                               setCategoryError("");
                             }}
-                            className="text-[10px] text-zinc-950 font-bold hover:underline cursor-pointer focus:outline-hidden"
+                            className="text-[10px] text-zinc-950 font-bold hover:underline cursor-pointer focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                           >
                             {isAddingCategory ? "Cancel" : "+ Add New"}
                           </button>
@@ -2313,7 +2362,7 @@ export default function AdminDeskWorkspace({
                                 value={newCategoryName}
                                 onChange={(e) => setNewCategoryName(e.target.value)}
                                 placeholder="New category name..."
-                                className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                                className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                               />
                               <button
                                 type="button"
@@ -2331,7 +2380,7 @@ export default function AdminDeskWorkspace({
                           <select
                             value={categoryId}
                             onChange={(e) => setCategoryId(e.target.value)}
-                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                           >
                             {categoriesList.map((cat) => (
                               <option key={cat.id} value={cat.id}>
@@ -2343,11 +2392,11 @@ export default function AdminDeskWorkspace({
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Language</label>
-                        <select
+                        <label htmlFor="admindeskworkspace-language" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Language</label>
+                        <select id="admindeskworkspace-language"
                           value={language}
                           onChange={(e) => setLanguage(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                         >
                           <option value="en">English (EN)</option>
                           <option value="ar">Arabic (AR)</option>
@@ -2355,11 +2404,11 @@ export default function AdminDeskWorkspace({
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Visibility</label>
-                        <select
+                        <label htmlFor="admindeskworkspace-visibility" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Visibility</label>
+                        <select id="admindeskworkspace-visibility"
                           value={visibility}
                           onChange={(e) => setVisibility(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                         >
                           <option value="PUBLIC">Public — visible to customers</option>
                           <option value="AGENTS">Agents only</option>
@@ -2422,8 +2471,8 @@ export default function AdminDeskWorkspace({
                       </div>
 
                       <div className="space-y-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-wider block ${reviewDueError ? "text-red-600" : "text-zinc-550"}`}>Review Due Date <span className="text-red-500">*</span></label>
-                        <input
+                        <label htmlFor="admindeskworkspace-review-due-date" className={`text-[10px] font-bold uppercase tracking-wider block ${reviewDueError ? "text-red-600" : "text-zinc-550"}`}>Review Due Date <span className="text-red-500">*</span></label>
+                        <input id="admindeskworkspace-review-due-date"
                           type="date"
                           value={reviewDue}
                           onChange={(e) => { setReviewDue(e.target.value); if (e.target.value) setReviewDueError(false); }}
@@ -2433,9 +2482,9 @@ export default function AdminDeskWorkspace({
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Tags</label>
+                        <label htmlFor="admindeskworkspace-tags" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Tags</label>
                         <div className="space-y-2">
-                          <input
+                          <input id="admindeskworkspace-tags"
                             type="text"
                             value={tagInput}
                             onChange={(e) => setTagInput(e.target.value)}
@@ -2450,7 +2499,7 @@ export default function AdminDeskWorkspace({
                               }
                             }}
                             placeholder="Type tag and press Enter..."
-                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                           />
                           {tags.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -2463,7 +2512,7 @@ export default function AdminDeskWorkspace({
                                   <button
                                     type="button"
                                     onClick={() => setTags(tags.filter((t) => t !== tag))}
-                                    className="text-zinc-450 hover:text-zinc-650 font-bold ml-0.5 cursor-pointer focus:outline-hidden"
+                                    className="text-zinc-450 hover:text-zinc-650 font-bold ml-0.5 cursor-pointer focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                                   >
                                     &times;
                                   </button>
@@ -2479,11 +2528,11 @@ export default function AdminDeskWorkspace({
                     <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-2xs space-y-4">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-455">Approval Workflow Route</h4>
                       <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Approval Workflow</label>
-                        <select
+                        <label htmlFor="admindeskworkspace-approval-workflow" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">Approval Workflow</label>
+                        <select id="admindeskworkspace-approval-workflow"
                           value={selectedWorkflowRouteId}
                           onChange={(e) => setSelectedWorkflowRouteId(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                           disabled={!!(!isCreating && editingArticle && editingArticle.status !== "Draft" && editingArticle.status !== "Archived")}
                           title={!isCreating && editingArticle && editingArticle.status !== "Draft" && editingArticle.status !== "Archived" ? "Workflow cannot be changed once review has started." : ""}
                         >
@@ -2517,13 +2566,13 @@ export default function AdminDeskWorkspace({
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 items-end">
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                            <label htmlFor="admindeskworkspace-current-status" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
                               Current Status: <span className="text-zinc-800 font-extrabold uppercase">{isCreating ? "DRAFT" : editingArticle?.status}</span>
                             </label>
-                            <select
+                            <select id="admindeskworkspace-current-status"
                               value={transitionStatus}
                               onChange={(e) => setTransitionStatus(e.target.value)}
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden cursor-pointer"
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                             >
                               <option value="">-- Change Status --</option>
                               {getAllowedStatusTransitions(isCreating ? "Draft" : editingArticle?.status || "Draft").map((t) => {
@@ -2538,15 +2587,15 @@ export default function AdminDeskWorkspace({
                           </div>
 
                           <div className="space-y-2 sm:col-span-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                            <label htmlFor="admindeskworkspace-transition-notes-rejection-comment" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
                               Transition Notes / Rejection Comment
                             </label>
-                            <input
+                            <input id="admindeskworkspace-transition-notes-rejection-comment"
                               type="text"
                               value={transitionComment}
                               onChange={(e) => setTransitionComment(e.target.value)}
                               placeholder="e.g. Approved copy, fixed typo, rejected because..."
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden"
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             />
                           </div>
                         </div>
@@ -2702,12 +2751,12 @@ export default function AdminDeskWorkspace({
                       {/* Variant Specific Fields */}
                       {variantTab === "default" && (
                         <div className="space-y-1.5 text-left mb-4">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
-                          <input
+                          <label htmlFor="admindeskworkspace-short-summary" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input id="admindeskworkspace-short-summary"
                             type="text"
                             value={vDefaultShort}
                             onChange={(e) => setVDefaultShort(e.target.value)}
-                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             placeholder="Quick summary snippet..."
                           />
                           <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Used for general search previews and fallback channels.</p>
@@ -2718,23 +2767,23 @@ export default function AdminDeskWorkspace({
                         <div className="space-y-4 mb-4">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1.5 text-left">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
-                              <input
+                              <label htmlFor="admindeskworkspace-short-summary-1" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                              <input id="admindeskworkspace-short-summary-1"
                                 type="text"
                                 value={vAgentShort}
                                 onChange={(e) => setVAgentShort(e.target.value)}
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                                 placeholder="Agent specific summary..."
                               />
                               <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Shown directly to agents in their active console.</p>
                             </div>
                             <div className="space-y-1.5 text-left">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Copy-ready Macro Response</label>
-                              <input
+                              <label htmlFor="admindeskworkspace-copy-ready-macro-response" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Copy-ready Macro Response</label>
+                              <input id="admindeskworkspace-copy-ready-macro-response"
                                 type="text"
                                 value={vAgentMacro}
                                 onChange={(e) => setVAgentMacro(e.target.value)}
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                                 placeholder="Text copied to clipboard in one click by agents..."
                               />
                             </div>
@@ -2744,12 +2793,12 @@ export default function AdminDeskWorkspace({
 
                       {variantTab === "chatbot" && (
                         <div className="space-y-1.5 text-left mb-4">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
-                          <input
+                          <label htmlFor="admindeskworkspace-short-summary-2" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input id="admindeskworkspace-short-summary-2"
                             type="text"
                             value={vChatbotShort}
                             onChange={(e) => setVChatbotShort(e.target.value)}
-                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             placeholder="Chatbot specific summary..."
                           />
                           <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Used by the AI bot to answer user search queries.</p>
@@ -2758,12 +2807,12 @@ export default function AdminDeskWorkspace({
 
                       {variantTab === "whatsapp" && (
                         <div className="space-y-1.5 text-left mb-4">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
-                          <input
+                          <label htmlFor="admindeskworkspace-short-summary-3" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550">Short Summary</label>
+                          <input id="admindeskworkspace-short-summary-3"
                             type="text"
                             value={vWhatsappShort}
                             onChange={(e) => setVWhatsappShort(e.target.value)}
-                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             placeholder="WhatsApp specific summary..."
                           />
                           <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Optimized text for WhatsApp channel delivery.</p>
@@ -2805,7 +2854,7 @@ export default function AdminDeskWorkspace({
                             {/* Text Style Dropdown */}
                             <select
                               onChange={(e) => executeCommand("formatBlock", e.target.value === "paragraph" ? "<p>" : `<${e.target.value}>`)}
-                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden hover:bg-zinc-50"
+                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 hover:bg-zinc-50"
                               defaultValue="paragraph"
                             >
                               <option value="paragraph">Normal text</option>
@@ -2817,7 +2866,7 @@ export default function AdminDeskWorkspace({
                             {/* Font Size Dropdown */}
                             <select
                               onChange={(e) => executeCommand("fontSize", e.target.value)}
-                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden hover:bg-zinc-50"
+                              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 cursor-pointer focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 hover:bg-zinc-50"
                               defaultValue="16"
                             >
                               <option value="12">12</option>
@@ -3280,7 +3329,7 @@ export default function AdminDeskWorkspace({
                             )}
 
                             {/* Word Counter */}
-                            <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-zinc-100 text-[10px] font-bold text-zinc-450 shadow-3xs select-none">
+                            <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-zinc-100 text-[10px] font-bold text-zinc-450 shadow-2xs select-none">
                               {(() => {
                                 const activeVal =
                                   variantTab === "default" ? vDefaultDetailed :
@@ -3459,13 +3508,13 @@ export default function AdminDeskWorkspace({
                                       </span>
                                     </td>
                                     <td className="px-5 py-4 text-right space-x-2 whitespace-nowrap">
-                                      <Link
-                                        href={`/articles/${art.id}`}
-                                        target="_blank"
-                                        className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 shadow-2xs"
+                                      <button
+                                        type="button"
+                                        onClick={() => setOpenArticleId(art.id)}
+                                        className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 shadow-2xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                                       >
                                         View
-                                      </Link>
+                                      </button>
                                       {isOwnArticle ? (
                                         <span className="inline-flex items-center gap-1 rounded border border-red-100 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-500 cursor-not-allowed" title="Separation of duties: You are the author and cannot approve your own article">
                                           ⛔ Cannot Approve
@@ -3624,8 +3673,8 @@ export default function AdminDeskWorkspace({
                       <div className="px-6 py-5 space-y-5">
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Workflow Name *</label>
-                            <input
+                            <label htmlFor="admindeskworkspace-workflow-name" className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Workflow Name *</label>
+                            <input id="admindeskworkspace-workflow-name"
                               type="text"
                               value={newWorkflowName}
                               onChange={e => setNewWorkflowName(e.target.value)}
@@ -3634,8 +3683,8 @@ export default function AdminDeskWorkspace({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Description</label>
-                            <input
+                            <label htmlFor="admindeskworkspace-description" className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1.5">Description</label>
+                            <input id="admindeskworkspace-description"
                               type="text"
                               value={newWorkflowDesc}
                               onChange={e => setNewWorkflowDesc(e.target.value)}
@@ -3682,27 +3731,27 @@ export default function AdminDeskWorkspace({
                                   </div>
                                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
                                     <div className="lg:col-span-2">
-                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Step Name *</label>
-                                      <input type="text" value={step.name} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], name: e.target.value }; setNewWorkflowSteps(u); }} placeholder="e.g. Technical Review" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition" />
+                                      <label htmlFor="admindeskworkspace-step-name" className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Step Name *</label>
+                                      <input id="admindeskworkspace-step-name" type="text" value={step.name} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], name: e.target.value }; setNewWorkflowSteps(u); }} placeholder="e.g. Technical Review" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition" />
                                     </div>
                                     <div>
-                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Role Required</label>
-                                      <select value={step.role_restriction} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], role_restriction: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                      <label htmlFor="admindeskworkspace-role-required" className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Role Required</label>
+                                      <select id="admindeskworkspace-role-required" value={step.role_restriction} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], role_restriction: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
                                         <option value="Admin">Admin</option>
                                         <option value="SuperAdmin">Super Admin</option>
                                         <option value="Any">Any Role</option>
                                       </select>
                                     </div>
                                     <div>
-                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Team</label>
-                                      <select value={step.team_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], team_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                      <label htmlFor="admindeskworkspace-restrict-to-team" className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Team</label>
+                                      <select id="admindeskworkspace-restrict-to-team" value={step.team_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], team_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
                                         <option value="">Any Team</option>
                                         {teams.map((t: any) => (<option key={t.id} value={t.id}>{t.name}</option>))}
                                       </select>
                                     </div>
                                     <div className="lg:col-span-2">
-                                      <label className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Specific User</label>
-                                      <select value={step.user_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], user_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
+                                      <label htmlFor="admindeskworkspace-restrict-to-specific-user" className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Restrict to Specific User</label>
+                                      <select id="admindeskworkspace-restrict-to-specific-user" value={step.user_id} onChange={e => { const u = [...newWorkflowSteps]; u[idx] = { ...u[idx], user_id: e.target.value }; setNewWorkflowSteps(u); }} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 focus:border-zinc-500 transition">
                                         <option value="">Any User (matching role/team)</option>
                                         {users.map((u: User) => (<option key={u.id} value={u.id}>{u.name} · {u.email}</option>))}
                                       </select>
@@ -3798,8 +3847,8 @@ export default function AdminDeskWorkspace({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Title */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Title</label>
-                      <input
+                      <label htmlFor="admindeskworkspace-title-4" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Title</label>
+                      <input id="admindeskworkspace-title-4"
                         type="text"
                         placeholder="Optional Title (e.g. System Maintenance)"
                         value={newNotifTitle}
@@ -3810,8 +3859,8 @@ export default function AdminDeskWorkspace({
 
                     {/* Alert Type */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Level / Type</label>
-                      <select
+                      <label htmlFor="admindeskworkspace-alert-level-type" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Level / Type</label>
+                      <select id="admindeskworkspace-alert-level-type"
                         value={newNotifType}
                         onChange={(e) => setNewNotifType(e.target.value as any)}
                         className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
@@ -3824,8 +3873,8 @@ export default function AdminDeskWorkspace({
 
                     {/* Target Group */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Audience Group</label>
-                      <select
+                      <label htmlFor="admindeskworkspace-target-audience-group" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Audience Group</label>
+                      <select id="admindeskworkspace-target-audience-group"
                         value={newNotifAudience}
                         onChange={(e) => setNewNotifAudience(e.target.value as any)}
                         className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
@@ -3838,8 +3887,8 @@ export default function AdminDeskWorkspace({
 
                     {/* Target Team */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Specific Team (Optional)</label>
-                      <select
+                      <label htmlFor="admindeskworkspace-target-specific-team-optional" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target Specific Team (Optional)</label>
+                      <select id="admindeskworkspace-target-specific-team-optional"
                         value={newNotifTeamId}
                         onChange={(e) => setNewNotifTeamId(e.target.value)}
                         className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10 transition"
@@ -3853,8 +3902,8 @@ export default function AdminDeskWorkspace({
 
                     {/* Starts At */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Starts At (Optional)</label>
-                      <input
+                      <label htmlFor="admindeskworkspace-starts-at-optional" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Starts At (Optional)</label>
+                      <input id="admindeskworkspace-starts-at-optional"
                         type="datetime-local"
                         value={newNotifStartsAt}
                         onChange={(e) => setNewNotifStartsAt(e.target.value)}
@@ -3864,8 +3913,8 @@ export default function AdminDeskWorkspace({
 
                     {/* Ends At */}
                     <div className="space-y-1 text-left">
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ends At (Optional)</label>
-                      <input
+                      <label htmlFor="admindeskworkspace-ends-at-optional" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ends At (Optional)</label>
+                      <input id="admindeskworkspace-ends-at-optional"
                         type="datetime-local"
                         value={newNotifEndsAt}
                         onChange={(e) => setNewNotifEndsAt(e.target.value)}
@@ -3876,8 +3925,8 @@ export default function AdminDeskWorkspace({
 
                   {/* Body/Message */}
                   <div className="space-y-1 text-left">
-                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Message</label>
-                    <textarea
+                    <label htmlFor="admindeskworkspace-alert-message" className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Alert Message</label>
+                    <textarea id="admindeskworkspace-alert-message"
                       placeholder="Type the notification details here..."
                       value={newNotifMessage}
                       onChange={(e) => setNewNotifMessage(e.target.value)}
@@ -4070,14 +4119,14 @@ export default function AdminDeskWorkspace({
                       type="date"
                       value={gapStartDate}
                       onChange={(e) => setGapStartDate(e.target.value)}
-                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden bg-white"
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 bg-white"
                     />
                     <span>To:</span>
                     <input
                       type="date"
                       value={gapEndDate}
                       onChange={(e) => setGapEndDate(e.target.value)}
-                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden bg-white"
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 bg-white"
                     />
                     {(gapStartDate || gapEndDate) && (
                       <button
@@ -4212,17 +4261,16 @@ export default function AdminDeskWorkspace({
                                   {g.status === "RESOLVED" && (
                                     <div className="flex items-center justify-end gap-2 text-xs">
                                       {g.resolving_article_id ? (
-                                        <Link
-                                          href={`/articles/${g.resolving_article_id}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 hover:text-green-900 hover:underline truncate max-w-40 transition-colors"
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenArticleId(g.resolving_article_id!)}
+                                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 hover:text-green-900 hover:underline truncate max-w-40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
                                         >
                                           {g.resolving_article?.title || "View Article"}
                                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
                                           </svg>
-                                        </Link>
+                                        </button>
                                       ) : (
                                         <span className="text-[10px] text-zinc-400 font-medium">No article linked</span>
                                       )}
@@ -4334,8 +4382,8 @@ export default function AdminDeskWorkspace({
                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
                       {/* Date From */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">From Date</label>
-                        <input
+                        <label htmlFor="admindeskworkspace-from-date" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">From Date</label>
+                        <input id="admindeskworkspace-from-date"
                           type="date"
                           value={auditFilterDateFrom}
                           onChange={e => setAuditFilterDateFrom(e.target.value)}
@@ -4344,8 +4392,8 @@ export default function AdminDeskWorkspace({
                       </div>
                       {/* Date To */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">To Date</label>
-                        <input
+                        <label htmlFor="admindeskworkspace-to-date" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">To Date</label>
+                        <input id="admindeskworkspace-to-date"
                           type="date"
                           value={auditFilterDateTo}
                           onChange={e => setAuditFilterDateTo(e.target.value)}
@@ -4354,12 +4402,12 @@ export default function AdminDeskWorkspace({
                       </div>
                       {/* Actor */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Actor</label>
+                        <label htmlFor="admindeskworkspace-actor" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Actor</label>
                         <div className="relative">
                           <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-350 pointer-events-none" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                           </svg>
-                          <input
+                          <input id="admindeskworkspace-actor"
                             type="text"
                             placeholder="Name or email..."
                             value={auditFilterActor}
@@ -4370,8 +4418,8 @@ export default function AdminDeskWorkspace({
                       </div>
                       {/* Action */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Action</label>
-                        <select
+                        <label htmlFor="admindeskworkspace-action" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Action</label>
+                        <select id="admindeskworkspace-action"
                           value={auditFilterAction}
                           onChange={e => setAuditFilterAction(e.target.value)}
                           className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors appearance-none cursor-pointer"
@@ -4384,8 +4432,8 @@ export default function AdminDeskWorkspace({
                       </div>
                       {/* Target Type */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Type</label>
-                        <select
+                        <label htmlFor="admindeskworkspace-target-type" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Type</label>
+                        <select id="admindeskworkspace-target-type"
                           value={auditFilterTargetType}
                           onChange={e => setAuditFilterTargetType(e.target.value)}
                           className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] text-zinc-800 font-medium outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-colors appearance-none cursor-pointer"
@@ -4398,12 +4446,12 @@ export default function AdminDeskWorkspace({
                       </div>
                       {/* Target Label */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Label</label>
+                        <label htmlFor="admindeskworkspace-target-label" className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Target Label</label>
                         <div className="relative">
                           <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-350 pointer-events-none" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                           </svg>
-                          <input
+                          <input id="admindeskworkspace-target-label"
                             type="text"
                             placeholder="Search label..."
                             value={auditFilterLabel}
@@ -4508,11 +4556,16 @@ export default function AdminDeskWorkspace({
                                     <button
                                       type="button"
                                       onClick={async () => {
-                                        if (!confirm(`Restore article to its state before "${log.action}"?`)) return;
+                                        const ok = await confirm({
+                                          title: "Restore this version?",
+                                          message: `The article will be rolled back to its state before "${log.action}". The current version is kept in the audit trail, so this can be undone.`,
+                                          confirmLabel: "Restore version",
+                                        });
+                                        if (!ok) return;
                                         const res = await fetch(`/api/v1/articles/${log.target_id}`, {
                                           method: "PATCH",
                                           headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ ...log.before, _rollback_from_audit: log.id }),
+                                          body: JSON.stringify({ audit_log_id: log.id }),
                                         });
                                         if (res.ok) {
                                           toast("Article restored. Reloading page…", "success");
@@ -5217,15 +5270,23 @@ export default function AdminDeskWorkspace({
                               Article opens and copy-macro clicks per day — latest first
                             </p>
                           </div>
-                          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                            <div
-                              onClick={() => setTrendHideEmpty(v => !v)}
+                          {/* A switch, not a checkbox — a plain div with onClick was
+                              unreachable by keyboard and announced as nothing. */}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={trendHideEmpty}
+                            onClick={() => setTrendHideEmpty(v => !v)}
+                            className="flex items-center gap-2 select-none shrink-0 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
+                          >
+                            <span
+                              aria-hidden="true"
                               className={`relative w-8 h-4 rounded-full transition-colors ${trendHideEmpty ? "bg-zinc-800" : "bg-zinc-200"}`}
                             >
                               <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${trendHideEmpty ? "translate-x-4" : ""}`} />
-                            </div>
+                            </span>
                             <span className="text-[11px] font-semibold text-zinc-500">Hide inactive days</span>
-                          </label>
+                          </button>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full table-fixed text-xs text-zinc-800 text-left border-collapse">
@@ -5473,14 +5534,14 @@ export default function AdminDeskWorkspace({
 
                 <form onSubmit={handleResolveGapSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
+                    <label htmlFor="admindeskworkspace-select-resolving-article" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block">
                       Select Resolving Article
                     </label>
-                    <select
+                    <select id="admindeskworkspace-select-resolving-article"
                       required
                       value={selectedResolvingArticleId}
                       onChange={(e) => setSelectedResolvingArticleId(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-855 focus:outline-hidden cursor-pointer"
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-855 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 cursor-pointer"
                     >
                       <option value="">-- Choose Published Article --</option>
                       {articles
@@ -5535,7 +5596,7 @@ export default function AdminDeskWorkspace({
                     value={rejectionModalComment}
                     onChange={(e) => setRejectionModalComment(e.target.value)}
                     placeholder="e.g. Please clarify step 3, update the screenshots, check spelling..."
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-850 focus:outline-hidden"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-850 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                   />
                 </div>
                 <div className="flex justify-end gap-3 pt-2 border-t border-zinc-150">
@@ -5569,6 +5630,14 @@ export default function AdminDeskWorkspace({
           )}
         </div>
       </div>
+
+      <ArticleModal
+        articleId={openArticleId}
+        open={openArticleId !== null}
+        onClose={() => setOpenArticleId(null)}
+        initialChannel="agent"
+        staffView
+      />
     </div>
   );
 }

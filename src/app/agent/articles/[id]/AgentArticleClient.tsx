@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
+import { getVideoEmbed } from "@/lib/media";
 
 type ArticleProps = {
   id: string;
@@ -13,9 +14,11 @@ type ArticleProps = {
   categoryId?: string;
   shortAnswer: string;
   copyMacro: string;
-  numberedSteps: string[];
+  /** The article body, already rendered to sanitised HTML by the server. */
+  bodyHtml: string;
+  imageUrl?: string;
+  videoLink?: string;
   troubleshootingFlow?: any;
-  internalNote: string;
   deliveryChannels: string[];
   helpfulPct: number | null;
   totalFeedback: number;
@@ -129,7 +132,13 @@ export default function AgentArticleClient({
   };
 
   const pillClass = STATUS_PILL[article.status] ?? STATUS_PILL.Draft;
-  const hasContent = article.copyMacro || article.numberedSteps.length > 0 || article.internalNote || article.troubleshootingFlow != null;
+  const videoEmbed = getVideoEmbed(article.videoLink);
+  const hasContent =
+    !!article.copyMacro ||
+    !!article.bodyHtml ||
+    !!article.imageUrl ||
+    !!videoEmbed ||
+    article.troubleshootingFlow != null;
 
   // Breadcrumb back navigation
   const backHref = backCategoryId
@@ -289,8 +298,9 @@ export default function AgentArticleClient({
               </section>
             )}
 
-            {/* Troubleshooting procedure */}
-            {article.numberedSteps.length > 0 && (
+            {/* Article body — same markdown pipeline and styling as the customer page
+                and the in-place article modal. */}
+            {article.bodyHtml && (
               <section className="rounded-2xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-3 px-8 py-5 border-b border-zinc-100">
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100">
@@ -299,40 +309,72 @@ export default function AgentArticleClient({
                       <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
                     </svg>
                   </div>
-                  <h2 className="text-sm font-bold text-zinc-900">Troubleshooting procedure</h2>
-                  <span className="ml-auto text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{article.numberedSteps.length} steps</span>
+                  <h2 className="text-sm font-bold text-zinc-900">Full article</h2>
                 </div>
-                <div className="px-8 py-6 space-y-5">
-                  {article.numberedSteps.map((step, i) => (
-                    <div key={i} className="flex items-start gap-4">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white text-[11px] font-extrabold mt-0.5 tabular-nums">
-                        {i + 1}
-                      </span>
-                      <p className="text-sm text-zinc-700 leading-relaxed pt-0.5">{step}</p>
-                    </div>
-                  ))}
+                <div className="px-8 py-6">
+                  <div
+                    className="prose-article text-sm leading-relaxed text-zinc-700"
+                    dir={article.language === "ar" ? "rtl" : undefined}
+                    dangerouslySetInnerHTML={{ __html: article.bodyHtml }}
+                  />
                 </div>
               </section>
             )}
 
-            {/* Internal operational note */}
-            {article.internalNote && (
-              <section className="rounded-2xl border border-amber-200 bg-amber-50/60 shadow-sm overflow-hidden">
-                <div className="flex items-center gap-3 px-8 py-5 border-b border-amber-200/60">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600">
-                      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            {/* Picture guide */}
+            {article.imageUrl && (
+              <section className="rounded-2xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-8 py-5 border-b border-zinc-100">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-600">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                     </svg>
                   </div>
-                  <h2 className="text-sm font-bold text-amber-900">Internal operational note</h2>
-                  <span className="ml-auto text-[10px] font-bold text-amber-600 uppercase tracking-wider">Agents only</span>
+                  <h2 className="text-sm font-bold text-zinc-900">Picture guide</h2>
                 </div>
                 <div className="px-8 py-6">
-                  <p className="text-sm text-amber-900 leading-relaxed">{article.internalNote}</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={article.imageUrl}
+                    alt={`Illustration for ${article.title}`}
+                    className="w-full rounded-xl border border-zinc-200 object-contain"
+                  />
                 </div>
               </section>
             )}
+
+            {/* Video */}
+            {videoEmbed && (
+              <section className="rounded-2xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-8 py-5 border-b border-zinc-100">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-600">
+                      <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                    </svg>
+                  </div>
+                  <h2 className="text-sm font-bold text-zinc-900">Video</h2>
+                </div>
+                <div className="px-8 py-6">
+                  <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
+                    {videoEmbed.type === "iframe" ? (
+                      <iframe
+                        src={videoEmbed.src}
+                        title={`Video for ${article.title}`}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="aspect-video w-full"
+                      />
+                    ) : (
+                      <video controls className="aspect-video w-full" preload="metadata">
+                        <source src={videoEmbed.src} />
+                        Your browser does not support embedded video.
+                      </video>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
           </div>
 
           {/* ── RIGHT: Sticky sidebar ── */}
@@ -457,8 +499,8 @@ export default function AgentArticleClient({
               await submitMissingFeedback(commentText);
             }} className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block mb-1.5">Comments / Feedback</label>
-                <textarea
+                <label htmlFor="agentarticleclient-comments-feedback" className="text-[10px] font-bold uppercase tracking-wider text-zinc-550 block mb-1.5">Comments / Feedback</label>
+                <textarea id="agentarticleclient-comments-feedback"
                   required
                   rows={4}
                   value={commentText}

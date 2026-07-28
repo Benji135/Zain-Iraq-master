@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import SearchResultList from "./SearchResultList";
+import ArticleModal from "./ArticleModal";
+import PinnedArticlesPanel from "./PinnedArticlesPanel";
 
 type Tenant = {
   id: string;
@@ -66,6 +69,9 @@ export default function CustomerSearchWorkspace({
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
+  // Articles open in place so a reader never loses their result list. The standalone
+  // /articles/[id] route still works for direct links and guest shares.
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
   const [suggestedCategories, setSuggestedCategories] = useState<{ id: string; name: string }[]>([]);
   const [gapLogged, setGapLogged] = useState(false);
   const [escalation, setEscalation] = useState<any>(null);
@@ -78,6 +84,10 @@ export default function CustomerSearchWorkspace({
   const [gapComment, setGapComment] = useState("");
   const [gapSubmitting, setGapSubmitting] = useState(false);
   const [gapDone, setGapDone] = useState(false);
+
+  // Search filters (TC6: category + language, with clear)
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterLanguage, setFilterLanguage] = useState<"" | "en" | "ar">("");
 
   // Filter categories by the active tenant
   const activeCategories = initialCategories.filter((c) => c.tenant_id === selectedTenant?.id);
@@ -104,6 +114,8 @@ export default function CustomerSearchWorkspace({
     setEscalation(null);
     setFeedbackText("");
     setFeedbackSubmitted(false);
+    setFilterCategory("");
+    setFilterLanguage("");
   }, [selectedTenant]);
 
   const triggerSearch = async (searchQuery: string) => {
@@ -123,8 +135,12 @@ export default function CustomerSearchWorkspace({
         },
         body: JSON.stringify({
           query: searchQuery.trim(),
-          language: "en",
+          language: filterLanguage || undefined,
           channel: "default",
+          filters: {
+            ...(filterCategory ? { category_id: filterCategory } : {}),
+            ...(filterLanguage ? { language: filterLanguage } : {}),
+          },
         }),
       });
 
@@ -216,7 +232,7 @@ export default function CustomerSearchWorkspace({
               placeholder={`Search ${selectedTenant?.name || ""} knowledge base…`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
             />
             {query && (
               <button type="button" onClick={() => { setQuery(""); setSearched(false); setResults([]); }} className="text-zinc-300 hover:text-zinc-500 transition-colors">
@@ -290,6 +306,16 @@ export default function CustomerSearchWorkspace({
           </div>
         )}
         </form>
+
+        {/* Favorites area — available without running a search */}
+        {!searched && onTogglePin && (
+          <PinnedArticlesPanel
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+            defaultOpen
+          />
+        )}
 
         {/* Category pills */}
         {!searched && activeCategories.length > 0 && (
@@ -387,58 +413,24 @@ export default function CustomerSearchWorkspace({
         {!searching && searched && results.length > 0 && (
           <div className="space-y-3">
             {/* Results header */}
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
-                {results.length} result{results.length !== 1 ? "s" : ""} — ranked by relevance
-              </p>
-              <button
-                type="button"
-                onClick={() => { setSearched(false); setResults([]); setQuery(""); }}
-                className="text-[10px] font-bold text-zinc-400 hover:text-zinc-700 transition-colors"
-              >Clear</button>
-            </div>
-
-            {/* Result cards — 2-col grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-              {results.map((art) => {
-                const isPinned = pinnedArticleIds.includes(art.article_id);
-                return (
-                  <div key={art.article_id} className="group flex flex-col rounded-xl border border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-all">
-                    <Link href={agentMode ? `/agent/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}` : `/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}`} className="flex-1 p-4 space-y-2.5 block">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="rounded-md bg-zinc-50 border border-zinc-200 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-500">
-                          {art.category}
-                        </span>
-                      </div>
-                      <h4 className="text-sm font-bold text-zinc-900 group-hover:text-zinc-600 leading-snug transition-colors line-clamp-2">
-                        {art.title}
-                      </h4>
-                    </Link>
-                    <div className="flex items-center justify-between px-4 py-2.5 border-t border-zinc-100">
-                      <span className="text-[9px] font-mono text-zinc-400">{art.language.toUpperCase()} · {art.status}</span>
-                      {onTogglePin && (
-                        <button
-                          type="button"
-                          onClick={() => onTogglePin(art.article_id)}
-                          className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[9px] font-extrabold transition-all ${
-                            isPinned
-                              ? "border-zinc-800 bg-zinc-900 text-white"
-                              : "border-zinc-200 bg-white text-zinc-400 hover:border-zinc-400 hover:text-zinc-700"
-                          }`}
-                        >
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                          </svg>
-                          {isPinned ? "Pinned" : "Pin"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <SearchResultList
+              results={results}
+              pinnedArticleIds={pinnedArticleIds}
+              onOpen={setOpenArticleId}
+              onTogglePin={onTogglePin}
+              onClear={() => { setSearched(false); setResults([]); setQuery(""); }}
+            />
           </div>
         )}
+
+        <ArticleModal
+          articleId={openArticleId}
+          open={openArticleId !== null}
+          onClose={() => setOpenArticleId(null)}
+          initialChannel="agent"
+          staffView
+          fullPageHref={(id) => `/agent/articles/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
+        />
       </div>
     );
   }
@@ -464,7 +456,7 @@ export default function CustomerSearchWorkspace({
                   const found = tenants.find((t) => t.id === e.target.value);
                   if (found) setSelectedTenant(found);
                 }}
-                className="rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-xs font-bold text-zinc-800 focus:outline-hidden transition-all shadow-xs cursor-pointer pr-8 appearance-none"
+                className="rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-xs font-bold text-zinc-800 focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 transition-all shadow-xs cursor-pointer pr-8 appearance-none"
                 style={{ borderLeft: `4px solid ${brandingColor}` }}
               >
                 {tenants.map((t) => (
@@ -500,6 +492,54 @@ export default function CustomerSearchWorkspace({
           </button>
         </form>
 
+        {/* Search filters (TC6: category + language, with clear) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="cust-filter-category">Filter by category</label>
+          <select
+            id="cust-filter-category"
+            value={filterCategory}
+            onChange={(e) => {
+              setFilterCategory(e.target.value);
+              if (query.trim()) triggerSearch(query);
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
+          >
+            <option value="">All categories</option>
+            {activeCategories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          <label className="sr-only" htmlFor="cust-filter-language">Filter by language</label>
+          <select
+            id="cust-filter-language"
+            value={filterLanguage}
+            onChange={(e) => {
+              setFilterLanguage(e.target.value as "" | "en" | "ar");
+              if (query.trim()) triggerSearch(query);
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 transition-all cursor-pointer"
+          >
+            <option value="">All languages</option>
+            <option value="en">English</option>
+            <option value="ar">العربية</option>
+          </select>
+
+          {(filterCategory || filterLanguage) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterCategory("");
+                setFilterLanguage("");
+                if (query.trim()) triggerSearch(query);
+              }}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-500 hover:text-zinc-900 hover:border-zinc-300 transition-all"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
         {/* Categories Pills */}
         <div className="flex flex-wrap gap-2 justify-center">
           {activeCategories.map((c) => (
@@ -513,6 +553,18 @@ export default function CustomerSearchWorkspace({
           ))}
         </div>
       </div>
+
+      {/* Favorites area — available without running a search */}
+      {!searched && onTogglePin && (
+        <div className="mb-6">
+          <PinnedArticlesPanel
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+            defaultOpen
+          />
+        </div>
+      )}
 
       {/* Results / Zero Results States */}
       <div className="space-y-6">
@@ -619,56 +671,21 @@ export default function CustomerSearchWorkspace({
           </div>
         ) : (
           /* RESULTS FOUND STATE */
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {results.map((art) => {
-              const isPinned = pinnedArticleIds.includes(art.article_id);
-              return (
-                <div key={art.article_id} className="group rounded-xl border border-zinc-200 bg-white shadow-sm transition-all duration-200 hover:border-zinc-350 hover:-translate-y-0.5 flex flex-col">
-                  <Link
-                    href={agentMode ? `/agent/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}` : `/articles/${art.article_id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
-                    className="block p-6 flex-1 text-left space-y-4"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-zinc-50 px-2 py-0.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border border-zinc-200">
-                        {art.category}
-                      </span>
-                      <span className="rounded bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700 border border-green-200 uppercase">
-                        {art.status}
-                      </span>
-                    </div>
-                    <h4 className="text-sm font-bold text-zinc-950 group-hover:text-zinc-650 transition-colors line-clamp-2 leading-snug">
-                      {art.title}
-                    </h4>
-                  </Link>
-
-                  <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-100 text-[10px] text-zinc-400 font-semibold font-mono">
-                    <span>{art.language?.toUpperCase() || "EN"}</span>
-                    {onTogglePin ? (
-                      <button
-                        type="button"
-                        onClick={() => onTogglePin(art.article_id)}
-                        title={isPinned ? "Unpin article" : "Pin for quick access"}
-                        className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-bold transition-all not-font-mono ${
-                          isPinned
-                            ? "border-zinc-800 bg-zinc-900 text-white"
-                            : "border-zinc-200 bg-white text-zinc-400 hover:border-zinc-400 hover:text-zinc-700"
-                        }`}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
-                        </svg>
-                        {isPinned ? "Pinned" : "Pin"}
-                      </button>
-                    ) : (
-                      <span>ID: {art.article_id.slice(0, 8)}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <SearchResultList
+            results={results}
+            pinnedArticleIds={pinnedArticleIds}
+            onOpen={setOpenArticleId}
+            onTogglePin={onTogglePin}
+          />
         )}
       </div>
+
+      <ArticleModal
+        articleId={openArticleId}
+        open={openArticleId !== null}
+        onClose={() => setOpenArticleId(null)}
+        fullPageHref={(id) => `/articles/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`}
+      />
     </div>
   );
 }

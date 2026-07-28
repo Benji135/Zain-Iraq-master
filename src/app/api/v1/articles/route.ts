@@ -35,12 +35,30 @@ export async function GET(req: NextRequest) {
     const statusFilter = searchParams.get("status") as ArticleStatus | null;
     const search = searchParams.get("search") || "";
 
-    // Determine status accessibility based on permission matrix:
-    // - Guests see only Published
-    // - Agents/Admins/SuperAdmins can see all statuses (agents see read-only)
+    // Status accessibility:
+    // - Guests: Published only
+    // - Agents: Approved or Published only. Unreviewed and rejected drafts are editorial
+    //   work in progress and must not reach an agent who might quote them to a customer.
+    //   Their own authored articles stay visible at any status, otherwise the
+    //   Draft -> InReview submission they are permitted to make becomes unreachable.
+    // - Admin / SuperAdmin: everything.
+    const AGENT_VISIBLE_STATUSES: ArticleStatus[] = [ArticleStatus.Approved, ArticleStatus.Published];
     let statusClause: any = undefined;
+    let agentStatusScope: any = null;
     if (!session || !userRole) {
       statusClause = ArticleStatus.Published;
+    } else if (userRole === "Agent") {
+      agentStatusScope = {
+        OR: [
+          { status: { in: AGENT_VISIBLE_STATUSES } },
+          { author_id: session.user.id },
+        ],
+      };
+      // A status filter from the UI may only narrow within what the agent may already see.
+      if (statusFilter && AGENT_VISIBLE_STATUSES.includes(statusFilter)) {
+        statusClause = statusFilter;
+        agentStatusScope = null;
+      }
     } else if (statusFilter) {
       statusClause = statusFilter;
     }
@@ -87,19 +105,25 @@ export async function GET(req: NextRequest) {
     }
     // SuperAdmin: teamFilter stays {} (sees everything)
 
+    // teamFilter and the search OR-clause both use a top-level `OR` key, so they
+    // must be combined via AND rather than spread — spreading would let the later
+    // key silently clobber the earlier one and drop the visibility restriction.
+    const searchFilter = search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { slug: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
+
     const articles = await db.article.findMany({
       where: {
         language: language || undefined,
         category_id: categoryId,
         author_id: authorId,
         status: statusClause,
-        ...teamFilter,
-        OR: search
-          ? [
-              { title: { contains: search, mode: "insensitive" } },
-              { slug: { contains: search, mode: "insensitive" } },
-            ]
-          : undefined,
+        AND: [teamFilter, searchFilter, ...(agentStatusScope ? [agentStatusScope] : [])],
       },
       include: {
         category: { select: { id: true, name: true } },

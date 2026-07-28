@@ -6,6 +6,26 @@ import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 import { parseMarkdownToHtml } from "@/lib/markdown";
 import CustomerSearchWorkspace from "@/components/CustomerSearchWorkspace";
 import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/Modal";
+import ArticleModal from "@/components/ArticleModal";
+
+/** Strip markdown/HTML syntax down to plain text for places that render raw article lines. */
+function stripToPlainText(raw: string): string {
+  return raw
+    .replace(/<a\b[^>]*>(.*?)<\/a>/gi, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/#{1,6}\s*/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 type AgentCase = {
   id: string;
@@ -85,6 +105,10 @@ export default function AgentDeskWorkspace({
   initialTab,
 }: AgentWorkspaceProps) {
   const toast = useToast();
+  // Articles open in place rather than in a new browser tab, so an agent keeps the live
+  // conversation and case context on screen while reading.
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const confirm = useConfirm();
   const [cases, setCases] = useState<AgentCase[]>(initialCases);
   const [activeTab, setActiveTab] = useState<"waiting" | "active" | "resolved">("waiting");
   const [selectedCase, setSelectedCase] = useState<AgentCase | null>(null);
@@ -107,13 +131,18 @@ export default function AgentDeskWorkspace({
   const [searchStartDate, setSearchStartDate] = useState("");
   const [searchEndDate, setSearchEndDate] = useState("");
 
-  // Pinned articles states
+  // Pinned articles states — storage key scoped per user+tenant (TC11)
+  const pinsStorageKey = `pinned_articles:${tenantId}:${currentUserId}`;
   const [pinnedArticleIds, setPinnedArticleIds] = useState<string[]>([]);
   const [publishedArticles, setPublishedArticles] = useState<any[]>([]);
-  // Targeted notifications state (TC13)
-  type NotifEntry = { id: string; title: string; message: string; uiType: "info" | "warning" | "success" };
-  const annTypeToUi = (t: string): "info" | "warning" | "success" =>
-    t === "ticker" ? "warning" : t === "broadcast" ? "success" : "info";
+  // Targeted notifications state (TC13).
+  // banner / ticker / broadcast are layout formats, not severities — there is no severity
+  // field on an announcement. Deriving one from the format meant a `broadcast` announcing an
+  // outage rendered as a green success banner with a tick. Tickers and broadcasts are the
+  // interrupting formats, so both read as attention; a plain banner stays informational.
+  type NotifEntry = { id: string; title: string; message: string; uiType: "info" | "warning"; dismissed?: boolean };
+  const annTypeToUi = (t: string): "info" | "warning" =>
+    t === "ticker" || t === "broadcast" ? "warning" : "info";
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
   const [pinnedPreview, setPinnedPreview] = useState<any | null>(null);
   const [loadingPinnedPreview, setLoadingPinnedPreview] = useState(false);
@@ -217,10 +246,19 @@ export default function AgentDeskWorkspace({
     };
     const fetchNotifications = async () => {
       try {
-        const res = await fetch("/api/v1/announcements");
+        const res = await fetch("/api/v1/announcements", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          setNotifications(data.map((a: any) => ({ id: a.id, title: a.title, message: a.body, uiType: annTypeToUi(a.type) })));
+          setNotifications((prev) =>
+            data.map((a: any) => ({
+              id: a.id,
+              title: a.title,
+              message: a.body,
+              uiType: annTypeToUi(a.type),
+              // Don't resurrect a notice the agent already dismissed this session.
+              dismissed: prev.some((p) => p.id === a.id && p.dismissed),
+            }))
+          );
         }
       } catch (e) {
         console.error(e);
@@ -231,9 +269,18 @@ export default function AgentDeskWorkspace({
     fetchNotifications();
     loadMyArticles();
 
-    // Load from local storage
+    // Announcements were fetched once on mount only, so an outage notice published while
+    // an agent had the desk open never reached them until they happened to reload — which
+    // defeats the point of a broadcast. Poll, and re-check whenever they return to the tab.
+    const poll = setInterval(fetchNotifications, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") fetchNotifications(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", fetchNotifications);
+
+    // Load from local storage, scoped per user+tenant so pins don't leak between
+    // accounts sharing a workstation (TC11).
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("pinned_articles");
+      const saved = localStorage.getItem(pinsStorageKey);
       if (saved) {
         try {
           setPinnedArticleIds(JSON.parse(saved));
@@ -242,6 +289,12 @@ export default function AgentDeskWorkspace({
         }
       }
     }
+
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", fetchNotifications);
+    };
   }, []);
 
   const handleTogglePin = (articleId: string) => {
@@ -253,8 +306,8 @@ export default function AgentDeskWorkspace({
       updated = [...pinnedArticleIds, articleId];
     }
     setPinnedArticleIds(updated);
-    localStorage.setItem("pinned_articles", JSON.stringify(updated));
-    if (!updated.includes(pinnedPreview?.id)) setPinnedPreview(null);
+    localStorage.setItem(pinsStorageKey, JSON.stringify(updated));
+    if (pinnedPreview && !updated.includes(pinnedPreview.id)) setPinnedPreview(null);
   };
 
   const handleOpenPinnedPreview = async (articleId: string) => {
@@ -1002,15 +1055,16 @@ export default function AgentDeskWorkspace({
         <div key={agentActiveTab} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 tab-fade-in">
 
           {/* Notifications Banner — backed by Announcements API */}
-          {notifications.length > 0 && (
-            <div className="mb-4 space-y-2 text-left">
-              {notifications.map(n => (
-                <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${n.uiType === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
-                    n.uiType === "success" ? "border-green-200 bg-green-50 text-green-800" :
-                      "border-blue-200 bg-blue-50 text-blue-800"
+          {notifications.some(n => !n.dismissed) && (
+            <div className="mb-4 space-y-2 text-left" role="status" aria-live="polite">
+              {notifications.filter(n => !n.dismissed).map(n => (
+                <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-semibold ${
+                  n.uiType === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-blue-200 bg-blue-50 text-blue-800"
                   }`}>
                   <div className="flex items-start gap-2">
-                    <span>{n.uiType === "warning" ? "⚠️" : n.uiType === "success" ? "✅" : "ℹ️"}</span>
+                    <span aria-hidden="true">{n.uiType === "warning" ? "⚠️" : "ℹ️"}</span>
                     <div>
                       {n.title && n.title !== n.message.slice(0, 60) && (
                         <p className="font-extrabold mb-0.5">{n.title}</p>
@@ -1018,7 +1072,15 @@ export default function AgentDeskWorkspace({
                       <span>{n.message}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setNotifications(prev => prev.filter(x => x.id !== n.id))} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity font-bold">×</button>
+                  {/* Marked dismissed rather than dropped, so the next poll doesn't bring it back. */}
+                  <button
+                    type="button"
+                    aria-label={`Dismiss notification: ${n.title || n.message.slice(0, 40)}`}
+                    onClick={() => setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, dismissed: true } : x))}
+                    className="shrink-0 rounded opacity-60 hover:opacity-100 transition-opacity font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
@@ -1237,11 +1299,13 @@ export default function AgentDeskWorkspace({
                       const steps = detailedSteps
                         .split("\n")
                         .filter((line: string) => /^\s*\d+[\.\)]/.test(line))
-                        .map((line: string) => line.replace(/^\s*\d+[\.\)]\s*/, "").trim())
+                        .map((line: string) => stripToPlainText(line.replace(/^\s*\d+[\.\)]\s*/, "").trim()))
                         .filter(Boolean);
-                      const internalNote = detailedSteps.split("\n").find(
-                        (l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l)
-                      ) || "";
+                      const internalNote = stripToPlainText(
+                        detailedSteps.split("\n").find(
+                          (l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l)
+                        ) || ""
+                      );
 
                       return (
                         <div className="space-y-4">
@@ -1275,8 +1339,11 @@ export default function AgentDeskWorkspace({
 
                           {internalNote && (
                             <div>
-                              <span className="text-[10px] font-bold uppercase text-amber-600 block mb-2">Internal Operational Note (Agents Only)</span>
-                              <div className="rounded-lg bg-amber-50/50 border border-amber-100 p-3 text-xs text-zinc-700 leading-relaxed">
+                              {/* This is the article's opening prose, not internal-only
+                                  content — labelling it "Agents Only" implied agents must
+                                  withhold text the customer can read on the public page. */}
+                              <span className="text-[10px] font-bold uppercase text-zinc-400 block mb-2">Article Excerpt</span>
+                              <div className="rounded-lg bg-zinc-50 border border-zinc-100 p-3 text-xs text-zinc-700 leading-relaxed">
                                 {internalNote}
                               </div>
                             </div>
@@ -1300,17 +1367,16 @@ export default function AgentDeskWorkspace({
                     })()}
 
                     <div className="flex items-center gap-3 pt-3 border-t border-zinc-100">
-                      <a
-                        href={`/agent/articles/${resolutionArticle.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-4 py-2 text-xs font-bold text-zinc-700 transition-all"
+                      <button
+                        type="button"
+                        onClick={() => setOpenArticleId(resolutionArticle.id)}
+                        className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white hover:bg-zinc-50 px-4 py-2 text-xs font-bold text-zinc-700 transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                       >
                         Open Full Article
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                         </svg>
-                      </a>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleTogglePin(resolutionArticle.id)}
@@ -1357,7 +1423,7 @@ export default function AgentDeskWorkspace({
                               onChange={e => setSearchGapComment(e.target.value)}
                               placeholder="What were you looking for? What search terms did you try? (required)"
                               rows={2}
-                              className="w-full rounded border border-amber-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none"
+                              className="w-full rounded border border-amber-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             />
                             <div className="flex items-center gap-2">
                               <button
@@ -1391,7 +1457,7 @@ export default function AgentDeskWorkspace({
                               onChange={e => setArticleFlagComment(e.target.value)}
                               placeholder="What information is missing or incorrect? (required)"
                               rows={2}
-                              className="w-full rounded border border-red-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none"
+                              className="w-full rounded border border-red-200 bg-white px-2.5 py-1.5 text-xs resize-none focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                             />
                             <button
                               type="button"
@@ -1732,21 +1798,20 @@ export default function AgentDeskWorkspace({
                     {pinnedArticleIds.map((id) => {
                       const art = publishedArticles.find((a) => a.id === id);
                       return (
-                        <a
+                        <button
                           key={id}
-                          href={`/articles/${id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-between gap-3 py-3 group hover:bg-zinc-50 -mx-5 px-5 transition-colors"
+                          type="button"
+                          onClick={() => setOpenArticleId(id)}
+                          className="flex w-full items-center justify-between gap-3 py-3 group hover:bg-zinc-50 -mx-5 px-5 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-zinc-900"
                         >
                           <div className="min-w-0">
                             <h5 className="text-xs font-bold text-zinc-900 truncate group-hover:text-zinc-600 transition-colors">{art?.title || `Article ${id.slice(0, 8)}`}</h5>
                             {art?.category?.name && <p className="text-[10px] text-zinc-400 mt-0.5">{art.category.name}</p>}
                           </div>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-300 group-hover:text-zinc-500 shrink-0 transition-colors">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                            <path d="M9 18l6-6-6-6"/>
                           </svg>
-                        </a>
+                        </button>
                       );
                     })}
                   </div>
@@ -1767,10 +1832,10 @@ export default function AgentDeskWorkspace({
         const avatarColors = ["bg-violet-500","bg-blue-500","bg-emerald-500","bg-rose-500","bg-amber-500","bg-cyan-500"];
         const sessionColor = (id: string) => avatarColors[id.charCodeAt(id.length - 1) % avatarColors.length];
         return (
-        <div className="flex rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-sm text-left -mx-2" style={{ height: "calc(100vh - 9rem)" }}>
+        <div className="flex rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-sm text-left -mx-2" style={{ height: "calc(100dvh - 9rem)", minHeight: "480px" }}>
 
           {/* ── Col 1: Conversation list ── */}
-          <div className={`w-full lg:w-72 shrink-0 flex flex-col border-r border-zinc-100 bg-zinc-50/40 ${
+          <div className={`w-full lg:w-60 xl:w-72 shrink-0 flex flex-col border-r border-zinc-100 bg-zinc-50/40 ${
             activeChatSessionId !== null ? "hidden lg:flex" : "flex"
           }`}>
             {/* Sidebar header */}
@@ -1898,7 +1963,7 @@ export default function AgentDeskWorkspace({
                               {activeSession.avatar}
                             </div>
                           )}
-                          <div className={`max-w-[65%] ${isAgent ? "items-end" : "items-start"} flex flex-col gap-1`}>
+                          <div className={`max-w-[85%] sm:max-w-[70%] ${isAgent ? "items-end" : "items-start"} flex flex-col gap-1`}>
                             <div className={`rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
                               isAgent
                                 ? "bg-zinc-900 text-white rounded-br-sm"
@@ -1927,7 +1992,7 @@ export default function AgentDeskWorkspace({
                           placeholder="Type a message…"
                           value={chatInputText}
                           onChange={(e) => setChatInputText(e.target.value)}
-                          className="flex-1 bg-transparent text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                          className="flex-1 bg-transparent text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                         />
                       </div>
                       <button
@@ -1948,7 +2013,7 @@ export default function AgentDeskWorkspace({
           </div>
 
           {/* ── Col 3: KB Assistant ── */}
-          <div className={`w-full lg:w-[420px] shrink-0 flex flex-col border-l border-zinc-200 bg-white ${
+          <div className={`w-full lg:w-[330px] xl:w-[400px] shrink-0 flex flex-col border-l border-zinc-200 bg-white ${
             mobileShowKb ? "flex" : "hidden lg:flex"
           }`}>
 
@@ -2014,7 +2079,7 @@ export default function AgentDeskWorkspace({
                         placeholder="Search articles…"
                         value={chatKbQuery}
                         onChange={(e) => setChatKbQuery(e.target.value)}
-                        className="flex-1 bg-transparent text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none"
+                        className="flex-1 bg-transparent text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                       />
                     </div>
                     <button
@@ -2114,8 +2179,8 @@ export default function AgentDeskWorkspace({
                               </div>
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider block">What's missing?</label>
-                              <textarea
+                              <label htmlFor="agentdeskworkspace-what-s-missing" className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider block">What's missing?</label>
+                              <textarea id="agentdeskworkspace-what-s-missing"
                                 value={chatSearchGapComment}
                                 onChange={e => setChatSearchGapComment(e.target.value)}
                                 placeholder="Describe what info was missing or what the correct answer should be…"
@@ -2196,11 +2261,13 @@ export default function AgentDeskWorkspace({
               const steps = detailedSteps
                 .split("\n")
                 .filter((l: string) => /^\s*\d+[\.\)]/.test(l))
-                .map((l: string) => l.replace(/^\s*\d+[\.\)]\s*/, "").trim())
+                .map((l: string) => stripToPlainText(l.replace(/^\s*\d+[\.\)]\s*/, "").trim()))
                 .filter(Boolean);
-              const internalNote = detailedSteps
-                .split("\n")
-                .find((l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l) && l.trim().length > 20) || "";
+              const internalNote = stripToPlainText(
+                detailedSteps
+                  .split("\n")
+                  .find((l: string) => l.trim() && !/^\s*\d+[\.\)]/.test(l) && l.trim().length > 20) || ""
+              );
 
               return (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -2245,8 +2312,8 @@ export default function AgentDeskWorkspace({
                   {/* Internal note */}
                   {internalNote && (
                     <div>
-                      <span className="text-[10px] font-extrabold uppercase text-amber-600 tracking-widest block mb-2">Agent Note</span>
-                      <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-zinc-700 leading-relaxed">
+                      <span className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-widest block mb-2">Article Excerpt</span>
+                      <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-xs text-zinc-700 leading-relaxed">
                         {internalNote}
                       </div>
                     </div>
@@ -2288,17 +2355,16 @@ export default function AgentDeskWorkspace({
 
                   {/* Footer actions */}
                   <div className="flex items-center gap-2 pt-3 border-t border-zinc-100">
-                    <a
-                      href={`/agent/articles/${chatPreviewArticle.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-700 transition-all"
+                    <button
+                      type="button"
+                      onClick={() => setOpenArticleId(chatPreviewArticle.id)}
+                      className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 px-3 py-1.5 text-[10px] font-bold text-zinc-700 transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
                     >
                       Open Full Article
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                       </svg>
-                    </a>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleTogglePin(chatPreviewArticle.id)}
@@ -2418,7 +2484,7 @@ export default function AgentDeskWorkspace({
               <form onSubmit={handleSubmitGap} className="px-6 py-6 space-y-5">
                 {/* Query text */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1 text-xs font-bold text-zinc-700">
+                  <label htmlFor="agentdeskworkspace-search-query-or-topic" className="flex items-center gap-1 text-xs font-bold text-zinc-700">
                     Search query or topic
                     <span className="text-red-500 ml-0.5">*</span>
                   </label>
@@ -2428,7 +2494,7 @@ export default function AgentDeskWorkspace({
                         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                       </svg>
                     </span>
-                    <input
+                    <input id="agentdeskworkspace-search-query-or-topic"
                       type="text"
                       required
                       placeholder="e.g. turkey roaming packages"
@@ -2443,8 +2509,8 @@ export default function AgentDeskWorkspace({
                 {/* Language + Channel + Occurrences in a row */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">Language</label>
-                    <select
+                    <label htmlFor="agentdeskworkspace-language" className="block text-xs font-bold text-zinc-700">Language</label>
+                    <select id="agentdeskworkspace-language"
                       value={gapForm.language}
                       onChange={(e) => setGapForm((f) => ({ ...f, language: e.target.value }))}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all appearance-none"
@@ -2454,8 +2520,8 @@ export default function AgentDeskWorkspace({
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">Reported channel</label>
-                    <select
+                    <label htmlFor="agentdeskworkspace-reported-channel" className="block text-xs font-bold text-zinc-700">Reported channel</label>
+                    <select id="agentdeskworkspace-reported-channel"
                       value={gapForm.channel}
                       onChange={(e) => setGapForm((f) => ({ ...f, channel: e.target.value }))}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all appearance-none"
@@ -2467,11 +2533,11 @@ export default function AgentDeskWorkspace({
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-zinc-700">
+                    <label htmlFor="agentdeskworkspace-occurrences-times-searched" className="block text-xs font-bold text-zinc-700">
                       Occurrences
                       <span className="ml-1 font-normal text-zinc-400">(times searched)</span>
                     </label>
-                    <input
+                    <input id="agentdeskworkspace-occurrences-times-searched"
                       type="number"
                       min={1}
                       max={9999}
@@ -2484,11 +2550,11 @@ export default function AgentDeskWorkspace({
 
                 {/* Feedback / comment */}
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-zinc-700">
+                  <label htmlFor="agentdeskworkspace-feedback-context-recommended" className="block text-xs font-bold text-zinc-700">
                     Feedback / Context
                     <span className="ml-1 font-normal text-zinc-400">(recommended)</span>
                   </label>
-                  <textarea
+                  <textarea id="agentdeskworkspace-feedback-context-recommended"
                     rows={2}
                     placeholder="What were you looking for? What info was missing? Helps admins understand the gap."
                     value={gapForm.comment}
@@ -2672,17 +2738,16 @@ export default function AgentDeskWorkspace({
                           </td>
                           <td className="px-4 py-4 max-w-[200px]">
                             {gap.resolving_article && gap.resolving_article_id ? (
-                              <a
-                                href={`/articles/${gap.resolving_article_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 font-semibold text-green-700 hover:text-green-900 hover:underline truncate transition-colors"
+                              <button
+                                type="button"
+                                onClick={() => setOpenArticleId(gap.resolving_article_id!)}
+                                className="inline-flex items-center gap-1 font-semibold text-green-700 hover:text-green-900 hover:underline truncate transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
                               >
                                 {gap.resolving_article.title}
                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                                 </svg>
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-zinc-400 italic">Pending</span>
                             )}
@@ -2979,12 +3044,18 @@ export default function AgentDeskWorkspace({
               {pinnedArticleIds.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm("Unpin all articles?")) {
-                      setPinnedArticleIds([]);
-                      setPinnedPreview(null);
-                      localStorage.removeItem("pinned_articles");
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Unpin all articles?",
+                      message: `This removes all ${pinnedArticleIds.length} pinned article${pinnedArticleIds.length !== 1 ? "s" : ""} from your quick-access list. The articles themselves are not affected.`,
+                      confirmLabel: "Unpin all",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    setPinnedArticleIds([]);
+                    setPinnedPreview(null);
+                    localStorage.removeItem(pinsStorageKey);
+                    toast("All articles unpinned.", "success");
                   }}
                   className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors"
                 >
@@ -3121,6 +3192,15 @@ export default function AgentDeskWorkspace({
 
         </div>
       </div>
+
+      <ArticleModal
+        articleId={openArticleId}
+        open={openArticleId !== null}
+        onClose={() => setOpenArticleId(null)}
+        initialChannel="agent"
+        staffView
+        fullPageHref={(id) => `/agent/articles/${id}`}
+      />
     </div>
   );
 }
