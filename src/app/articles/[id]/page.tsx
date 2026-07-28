@@ -6,6 +6,7 @@ import ArticleFeedbackForm from "@/components/ArticleFeedbackForm";
 import CopyMacroButton from "./CopyMacroButton";
 import { ArticleStatus, Channel } from "@prisma/client";
 import { parseMarkdownToHtml } from "@/lib/markdown";
+import { getVideoEmbed } from "@/lib/media";
 import TroubleshootingPlayer from "@/components/TroubleshootingPlayer";
 
 type PageProps = {
@@ -147,32 +148,9 @@ export default async function ArticleDetailPage({ params, searchParams }: PagePr
   const macroText = displayVariant?.copy_ready_macro || "";
   const videoLink = displayVariant?.video_link?.trim() || "";
 
-  // Resolve an embeddable video URL (YouTube / Vimeo → iframe; direct file → <video>). TC17.
-  const getEmbed = (url: string): { type: "iframe" | "file"; src: string } | null => {
-    try {
-      const u = new URL(url);
-      const host = u.hostname.replace(/^www\./, "");
-      if (host === "youtube.com" || host === "m.youtube.com") {
-        const v = u.searchParams.get("v");
-        if (v) return { type: "iframe", src: `https://www.youtube.com/embed/${v}` };
-      }
-      if (host === "youtu.be") {
-        const id = u.pathname.slice(1);
-        if (id) return { type: "iframe", src: `https://www.youtube.com/embed/${id}` };
-      }
-      if (host === "vimeo.com") {
-        const id = u.pathname.split("/").filter(Boolean)[0];
-        if (id && /^\d+$/.test(id)) return { type: "iframe", src: `https://player.vimeo.com/video/${id}` };
-      }
-      if (/\.(mp4|webm|ogg)$/i.test(u.pathname)) {
-        return { type: "file", src: u.href };
-      }
-    } catch {
-      return null;
-    }
-    return null;
-  };
-  const videoEmbed = videoLink ? getEmbed(videoLink) : null;
+  // YouTube / Vimeo → iframe; direct file → <video>. TC17. Shared with the agent page
+  // and the article modal so a video behaves identically wherever it is opened.
+  const videoEmbed = getVideoEmbed(videoLink);
 
   // Role-scoped back navigation — preserves category and search context
   const catName = article.category?.name;

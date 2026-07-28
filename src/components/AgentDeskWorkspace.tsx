@@ -1303,8 +1303,11 @@ export default function AgentDeskWorkspace({
 
                           {internalNote && (
                             <div>
-                              <span className="text-[10px] font-bold uppercase text-amber-600 block mb-2">Internal Operational Note (Agents Only)</span>
-                              <div className="rounded-lg bg-amber-50/50 border border-amber-100 p-3 text-xs text-zinc-700 leading-relaxed">
+                              {/* This is the article's opening prose, not internal-only
+                                  content — labelling it "Agents Only" implied agents must
+                                  withhold text the customer can read on the public page. */}
+                              <span className="text-[10px] font-bold uppercase text-zinc-400 block mb-2">Article Excerpt</span>
+                              <div className="rounded-lg bg-zinc-50 border border-zinc-100 p-3 text-xs text-zinc-700 leading-relaxed">
                                 {internalNote}
                               </div>
                             </div>
@@ -2273,8 +2276,8 @@ export default function AgentDeskWorkspace({
                   {/* Internal note */}
                   {internalNote && (
                     <div>
-                      <span className="text-[10px] font-extrabold uppercase text-amber-600 tracking-widest block mb-2">Agent Note</span>
-                      <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-zinc-700 leading-relaxed">
+                      <span className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-widest block mb-2">Article Excerpt</span>
+                      <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-xs text-zinc-700 leading-relaxed">
                         {internalNote}
                       </div>
                     </div>

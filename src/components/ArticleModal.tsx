@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Modal } from "./Modal";
 import { parseMarkdownToHtml } from "@/lib/markdown";
+import { getVideoEmbed } from "@/lib/media";
 import TroubleshootingPlayer from "./TroubleshootingPlayer";
 import ArticleFeedbackForm from "./ArticleFeedbackForm";
 
@@ -24,30 +25,6 @@ const STATUS_STYLES: Record<string, string> = {
   Archived: "bg-zinc-100 text-zinc-500 ring-zinc-400/20",
   Rejected: "bg-red-50 text-red-700 ring-red-600/20",
 };
-
-/** YouTube / Vimeo → iframe; direct media file → <video>. Mirrors the full article page. */
-function getEmbed(url: string): { type: "iframe" | "file"; src: string } | null {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      const v = u.searchParams.get("v");
-      if (v) return { type: "iframe", src: `https://www.youtube.com/embed/${v}` };
-    }
-    if (host === "youtu.be") {
-      const id = u.pathname.slice(1);
-      if (id) return { type: "iframe", src: `https://www.youtube.com/embed/${id}` };
-    }
-    if (host === "vimeo.com") {
-      const id = u.pathname.split("/").filter(Boolean)[0];
-      if (id && /^\d+$/.test(id)) return { type: "iframe", src: `https://player.vimeo.com/video/${id}` };
-    }
-    if (/\.(mp4|webm|ogg)$/i.test(u.pathname)) return { type: "file", src: u.href };
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -165,7 +142,7 @@ export default function ArticleModal({
   const body = shown?.detailed_steps?.trim() || "";
   const macro = shown?.copy_ready_macro?.trim() || "";
   const image = shown?.image_url?.trim() || "";
-  const embed = shown?.video_link?.trim() ? getEmbed(shown.video_link.trim()) : null;
+  const embed = getVideoEmbed(shown?.video_link);
   const tags: string[] = (article?.article_tags ?? []).map((t: any) => t.tag?.name).filter(Boolean);
 
   const href = article ? (fullPageHref ? fullPageHref(article.id) : `/articles/${article.id}`) : "#";
